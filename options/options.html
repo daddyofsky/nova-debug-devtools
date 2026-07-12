@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Nova Debug 옵션</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <h1>테마</h1>
+  <p class="hint">
+    패널 UI 색상 테마를 선택합니다. 자동은 DevTools 자체 테마 설정을 따라갑니다.
+  </p>
+  <div id="theme-options">
+    <label><input type="radio" name="theme" value="auto" checked> 자동 (DevTools 설정 따름)</label>
+    <label><input type="radio" name="theme" value="light"> 밝게</label>
+    <label><input type="radio" name="theme" value="dark"> 어둡게</label>
+  </div>
+
+  <h1>요청 목록</h1>
+  <p class="hint">
+    패널 요청 목록에 표시할 항목과 최대 보관 개수를 설정합니다. 최대 개수를 넘으면 오래된 요청부터 제거됩니다.
+  </p>
+  <div id="list-options">
+    <label><input type="checkbox" id="chk-show-time" checked> 요청 목록에 시간 표시</label>
+    <label>최대 보관 개수 <input type="number" id="max-entries" min="1" step="1" value="100"></label>
+  </div>
+
+  <h1>서버 연동 설정</h1>
+  <p class="hint">
+    확장이 debug 조회 요청(<code>?fetch={id}</code>)을 보낼 Fetch 경로는 호스트별로 아래 "호스트" 표에서
+    설정하세요 (비워두면 기본 경로를 사용합니다).
+  </p>
+  <div id="transport-options">
+    <label class="field-block">
+      공통 토큰 (호스트별 토큰이 비어 있으면 적용, 서버 <code>ext.token</code> 설정과 동일한 값)
+      <span class="field-row">
+        <input type="text" id="debug-token" placeholder="(비우면 하위호환: 값 1 로 협상 — 보안 낮음)">
+        <button type="button" id="btn-gen-token">자동 생성</button>
+        <button type="button" id="btn-copy-token">복사</button>
+        <span id="token-status"></span>
+      </span>
+    </label>
+    <p class="hint small-hint">
+      서버 <code>ext.token</code> 설정에 위와 같은 값을 넣어야 협상/조회가 통과합니다.
+      비워두면 기존처럼 IP만으로 opt-in됩니다.
+    </p>
+  </div>
+
+  <h1>호스트</h1>
+  <p class="hint">
+    헤더 주입을 허용할 호스트와 IDE 연동 정보를 한 곳에서 관리합니다. 체크된 호스트에만
+    X-Nova-Debug 요청 헤더를 주입합니다(팝업의 사이트별 스위치와 같은 값을 공유합니다). trace/파일
+    경로는 서버 프로젝트 루트 기준 상대경로이므로, Local Path 에는 그 상대경로가 이어붙을 로컬
+    프로젝트 루트 경로를 입력하세요. 매핑이 없는 호스트는 IDE 링크 없이 텍스트로만 표시됩니다.
+    Fetch 경로가 비어 있으면 기본 경로를, 토큰이 비어 있으면 위 공통 토큰을 사용합니다.
+  </p>
+  <table id="map-table">
+    <colgroup>
+      <col class="col-enabled">
+      <col class="col-host">
+      <col class="col-protocol">
+      <col class="col-localpath">
+      <col class="col-project">
+      <col class="col-fetchpath">
+      <col class="col-token">
+      <col class="col-remove">
+    </colgroup>
+    <thead>
+      <tr>
+        <th></th>
+        <th>도메인 (예: example.com)</th>
+        <th>Protocol</th>
+        <th>Local Path</th>
+        <th>Project</th>
+        <th>Fetch 경로 (선택)</th>
+        <th>토큰 (선택)</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody id="map-body"></tbody>
+  </table>
+  <button type="button" id="btn-add">+ 호스트 추가</button>
+
+  <details id="chrome-policy-details">
+    <summary>💡 Chrome: 파일 열기 확인창 없애기</summary>
+    <div class="details-body">
+      <p class="hint">
+        Chrome 은 IDE 링크(phpstorm:// 등 커스텀 프로토콜) 실행 시 "항상 허용" 선택지 없이 매번 확인창을
+        띄웁니다(devtools 확장에서의 실행은 사용자 제스처 없는 탐색으로 간주되기 때문). 아래 정책을
+        적용하면 위 표에서 체크한 호스트+프로토콜 조합에 한해 확인창 없이 바로 열립니다. Firefox 는
+        확인창에서 "항상 허용"을 선택하면 되므로 별도 설정이 필요 없습니다.
+      </p>
+
+      <h2>macOS</h2>
+      <pre id="chrome-policy-cmd" class="code-block"></pre>
+      <div class="actions">
+        <button type="button" id="btn-copy-policy">명령 복사</button>
+        <span id="copy-status"></span>
+      </div>
+      <ul class="small-list">
+        <li>적용: Chrome 을 완전히 종료 후 재시작 → <code>chrome://policy</code> 에서 AutoLaunchProtocolsFromOrigins 확인</li>
+        <li>해제: <code>defaults delete com.google.Chrome AutoLaunchProtocolsFromOrigins</code></li>
+      </ul>
+
+      <h2>Windows</h2>
+      <p class="hint small-hint">
+        아래 내용을 메모장에 붙여넣어 확장자 <code>.reg</code>로 저장한 뒤 더블클릭(관리자 권한)하면
+        레지스트리에 정책이 등록됩니다.
+      </p>
+      <pre id="windows-policy-cmd" class="code-block"></pre>
+      <div class="actions">
+        <button type="button" id="btn-copy-windows-policy">내용 복사</button>
+        <span id="copy-windows-status"></span>
+      </div>
+      <ul class="small-list">
+        <li>적용: Chrome 을 완전히 종료 후 재시작 → <code>chrome://policy</code> 에서 AutoLaunchProtocolsFromOrigins 확인</li>
+        <li>해제: 레지스트리 편집기에서 <code>HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome</code> 의 <code>AutoLaunchProtocolsFromOrigins</code> 값 삭제</li>
+        <li><code>*</code> (모든 사이트 허용)는 보안상 권장하지 않습니다 — 필요한 호스트만 체크하세요</li>
+      </ul>
+    </div>
+  </details>
+
+  <div class="actions">
+    <button type="button" id="btn-save">저장</button>
+    <span id="save-status"></span>
+  </div>
+  <script src="../lib/protocol.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>

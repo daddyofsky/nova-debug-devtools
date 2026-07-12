@@ -1,0 +1,388 @@
+/*
+ * Nova Debug — devtools_page
+ *
+ * DevTools 오픈 즉시 로드되는 컨텍스트라는 점을 이용해 수집 계층(port 연결/REGISTER,
+ * 네트워크 응답 헤더 감지, background 경유 fetch, entries 버퍼)을 여기서 소유한다.
+ * panel/panel.js 는 Nova Debug 탭이 실제로 선택되어야만 로드되므로, 그 전에 로드된
+ * 계층에 두어야 "패널을 열지 않아도 확장 모드로 전환" 이 보장된다.
+ * 패널은 열릴 때(panel.onShown)마다 window.__novaAttach(shared) 로 이 상태를 주입받는다.
+ */
+(function () {
+  const ext = NovaDebugProtocol.ext;
+  const PORT_NAME = NovaDebugProtocol.PORT_NAME;
+  const MSG = NovaDebugProtocol.MSG;
+  const ID_HEADER = NovaDebugProtocol.ID_HEADER.toLowerCase();
+  const STORAGE_KEYS = NovaDebugProtocol.STORAGE_KEYS;
+
+  const RECONNECT_DELAY_MS = 300;
+  const RECONNECT_MAX_DELAY_MS = 5000;
+  const HEARTBEAT_INTERVAL_MS = 15000; // background(SW/event page) idle 타임아웃(통상 30s)보다 짧게 유지
+  const HEARTBEAT_TIMEOUT_MS = 10000;
+
+  const entries = [];
+  const listeners = new Set();
+  let preserveLog = false;
+  let status = "connecting...";
+  let port = null;
+  let reconnectAttempts = 0;
+  let connGen = 0; // 재연결 시 이전 port 의 지연된 onDisconnect/onMessage 를 무시하기 위한 세대 토큰
+  let heartbeatTimer = null;
+  let heartbeatTimeoutTimer = null;
+  let maxEntries = 100;
+  // fetch 경로/토큰 유효 설정 계산에 쓰는 원본 storage 값 — NovaDebugProtocol.effectiveFetchPath/
+  // effectiveToken(origin, novaConfig) 로 소비한다.
+  let novaConfig = { hostMap: {}, token: "" };
+
+  function storageArea() {
+    return ext.storage.sync || ext.storage.local;
+  }
+
+  function loadNovaConfig() {
+    return Promise.all([
+      NovaDebugProtocol.loadHostMap(storageArea()),
+      storageArea().get(STORAGE_KEYS.TOKEN),
+    ])
+      .then(([hostMap, tokenRes]) => {
+        novaConfig = {
+          hostMap,
+          token: (tokenRes && tokenRes[STORAGE_KEYS.TOKEN]) || "",
+        };
+      })
+      .catch((err) => {
+        console.error("[NovaDebug] fetch 설정 로드 실패", err);
+      });
+  }
+
+  // entries 는 panel.js 가 참조를 공유하므로 length=0 방식이 아니라 splice로 앞에서(오래된 것부터) 제거한다.
+  function trimEntries() {
+    if (entries.length > maxEntries) {
+      entries.splice(0, entries.length - maxEntries);
+    }
+  }
+
+  function loadMaxEntries() {
+    storageArea()
+      .get("maxEntries")
+      .then((res) => {
+        const val = res && res.maxEntries;
+        maxEntries = (typeof val === "number" && val > 0) ? val : 100;
+        trimEntries();
+        notify();
+      })
+      .catch((err) => {
+        console.error("[NovaDebug] maxEntries 로드 실패", err);
+      });
+  }
+
+  if (ext.storage.onChanged) {
+    ext.storage.onChanged.addListener((changes, area) => {
+      if (area !== "sync" && area !== "local") return;
+      if (changes.maxEntries) {
+        const val = changes.maxEntries.newValue;
+        maxEntries = (typeof val === "number" && val > 0) ? val : 100;
+        trimEntries();
+        notify();
+      }
+      if (changes[STORAGE_KEYS.HOST_MAP] || changes[STORAGE_KEYS.TOKEN]) {
+        loadNovaConfig();
+      }
+    });
+  }
+
+  // background 가 우리 자신의 dump 조회 요청(fetchViaBackground/fetchViaTab)을 다시
+  // "새 요청"으로 감지해 entries 에 재등록하는 재귀를 막기 위한 자기 요청 URL 추적.
+  const ownFetchUrls = new Set();
+
+  function notify() {
+    listeners.forEach((cb) => {
+      try {
+        cb();
+      } catch (err) {
+        console.error("[NovaDebug] onChange 리스너 오류", err);
+      }
+    });
+  }
+
+  function setStatus(text) {
+    status = text;
+    notify();
+  }
+
+  function onChange(cb) {
+    listeners.add(cb);
+    return () => listeners.delete(cb);
+  }
+
+  // ------------------------------------------------------------
+  // Port / fetch
+  // ------------------------------------------------------------
+
+  function stopHeartbeat() {
+    if (heartbeatTimer) {
+      clearInterval(heartbeatTimer);
+      heartbeatTimer = null;
+    }
+    if (heartbeatTimeoutTimer) {
+      clearTimeout(heartbeatTimeoutTimer);
+      heartbeatTimeoutTimer = null;
+    }
+  }
+
+  // background 가 유휴 종료 후 재시작되면 등록 상태(activeTabIds 등)를 잃는다.
+  // 정상적으로는 port.onDisconnect 가 이를 감지해 재연결하지만, 그 이벤트가 지연/누락되면
+  // (Firefox 에서 관찰됨) devtools 패널은 죽은 port 를 산 것으로 착각해 REGISTER 를 다시 보내지
+  // 않는다 — heartbeat 로 이를 능동적으로 감지해 강제 재연결한다.
+  function startHeartbeat(myGen) {
+    stopHeartbeat();
+    heartbeatTimer = setInterval(() => {
+      if (myGen !== connGen || !port) return;
+      try {
+        port.postMessage({ type: MSG.PING });
+      } catch (err) {
+        return; // 전송 실패는 onDisconnect 가 곧 처리
+      }
+      // 이전 사이클의 timeout 이 아직 안 지워졌다면(PONG 지연) 먼저 정리하고 새로 건다 —
+      // 안 그러면 이전 timeout 이 고아 상태로 남아 정상 연결에서도 오탐 재연결을 유발할 수 있다.
+      if (heartbeatTimeoutTimer) clearTimeout(heartbeatTimeoutTimer);
+      heartbeatTimeoutTimer = setTimeout(() => {
+        if (myGen !== connGen) return;
+        forceReconnect();
+      }, HEARTBEAT_TIMEOUT_MS);
+    }, HEARTBEAT_INTERVAL_MS);
+  }
+
+  function scheduleReconnect() {
+    reconnectAttempts++;
+    setStatus("reconnecting...");
+    const delay = Math.min(RECONNECT_DELAY_MS * reconnectAttempts, RECONNECT_MAX_DELAY_MS);
+    setTimeout(connectPort, delay);
+  }
+
+  // heartbeat 무응답 시 강제 재연결 — onDisconnect 를 기다리지 않고 새 port 로 교체한다.
+  function forceReconnect() {
+    connGen++;
+    stopHeartbeat();
+    try {
+      if (port) port.disconnect();
+    } catch (err) {
+      // no-op — 이미 죽은 port 일 수 있음
+    }
+    setStatus("reconnecting...");
+    setTimeout(connectPort, RECONNECT_DELAY_MS);
+  }
+
+  function connectPort() {
+    const myGen = ++connGen;
+    try {
+      port = ext.runtime.connect({ name: PORT_NAME });
+    } catch (err) {
+      console.error("[NovaDebug] port 연결 실패", err);
+      scheduleReconnect();
+      return;
+    }
+
+    port.postMessage({
+      type: MSG.REGISTER,
+      tabId: ext.devtools.inspectedWindow.tabId,
+    });
+
+    reconnectAttempts = 0;
+    setStatus("listening (tab " + ext.devtools.inspectedWindow.tabId + ")");
+    startHeartbeat(myGen);
+
+    port.onMessage.addListener((msg) => {
+      if (myGen !== connGen || !msg) return;
+      if (msg.type === MSG.PONG && heartbeatTimeoutTimer) {
+        clearTimeout(heartbeatTimeoutTimer);
+        heartbeatTimeoutTimer = null;
+      }
+    });
+
+    port.onDisconnect.addListener(() => {
+      if (myGen !== connGen) return; // forceReconnect 등으로 이미 교체된 이전 port 의 지연 이벤트
+      stopHeartbeat();
+      scheduleReconnect();
+    });
+  }
+
+  async function fetchViaBackground(url, headerValue) {
+    let response;
+    try {
+      response = await ext.runtime.sendMessage({
+        type: MSG.FETCH,
+        url,
+        headerValue,
+        tabId: ext.devtools.inspectedWindow.tabId,
+      });
+    } catch (err) {
+      throw new Error(String((err && err.message) || err));
+    }
+    if (!response) {
+      throw new Error("background 응답 없음");
+    }
+    if (!response.ok) {
+      throw new Error(response.error || "fetch 실패");
+    }
+    return response.data;
+  }
+
+  function findHeader(headers, nameLc) {
+    if (!headers) return null;
+    for (const h of headers) {
+      if (h.name && h.name.toLowerCase() === nameLc) return h.value;
+    }
+    return null;
+  }
+
+  function computeStats(data) {
+    if (!data || data.schemaVersion !== 1) {
+      return { queryCount: 0, slowCount: 0, hasError: false, hasRedirect: false };
+    }
+    let hasError = false;
+    let hasRedirect = false;
+    (data.entries || []).forEach((item) => {
+      if (item.label && /ERROR|Exception/i.test(item.label)) hasError = true;
+      if (item.label && /REDIRECT/i.test(item.label)) hasRedirect = true;
+    });
+    return {
+      queryCount: data.summary.queries.count,
+      slowCount: data.summary.queries.slow.count,
+      hasError,
+      hasRedirect,
+    };
+  }
+
+  function retryFetch(entry) {
+    entry.retrying = true;
+    notify();
+    ownFetchUrls.add(entry.fetchUrl);
+    const headerValue = NovaDebugProtocol.effectiveToken(entry.origin, novaConfig);
+    fetchViaBackground(entry.fetchUrl, headerValue)
+      .then((data) => {
+        entry.data = data;
+        entry.stats = computeStats(data);
+        entry.error = null;
+        entry.retrying = false;
+        notify();
+      })
+      .catch((err) => {
+        entry.error = String(err.message || err);
+        entry.retrying = false;
+        notify();
+      });
+  }
+
+  // ------------------------------------------------------------
+  // 네트워크 캡처
+  // ------------------------------------------------------------
+
+  ext.devtools.network.onRequestFinished.addListener((request) => {
+    // 우리 자신이 조회를 위해 보낸 dump-fetch 요청이 다시 캡처된 경우 — 서버가 그 응답에도
+    // X-Nova-Debug-Id 헤더를 붙이면 무한 재감지 루프가 될 수 있어 여기서 차단한다.
+    if (ownFetchUrls.has(request.request.url)) return;
+
+    const headers = request.response && request.response.headers;
+    const id = findHeader(headers, ID_HEADER);
+    if (!id) return;
+
+    // X-Nova-Debug-Fetch 응답 헤더 폐지(서버 내부 경로 노출 방지) — 확장 자체 설정(origin별
+    // fetchPath 오버라이드 + 기본 경로)으로 조회 URL을 구성한다.
+    let origin;
+    try {
+      origin = new URL(request.request.url).origin;
+    } catch (err) {
+      console.error("[NovaDebug] 요청 URL origin 파싱 실패", request.request.url, err);
+      return;
+    }
+    const basePath = NovaDebugProtocol.effectiveFetchPath(origin, novaConfig);
+    if (!basePath) {
+      console.error("[NovaDebug] fetch 경로 설정이 올바르지 않습니다", origin, novaConfig);
+      return;
+    }
+    let fetchUrl;
+    try {
+      const u = new URL(basePath);
+      u.searchParams.set("fetch", id);
+      fetchUrl = u.href;
+    } catch (err) {
+      console.error("[NovaDebug] fetch URL 구성 실패", basePath, err);
+      return;
+    }
+    const headerValue = NovaDebugProtocol.effectiveToken(origin, novaConfig);
+
+    const entry = {
+      id,
+      method: request.request.method,
+      url: request.request.url,
+      origin,
+      status: request.response.status,
+      time: new Date(),
+      data: null,
+      stats: null,
+      error: null,
+      retrying: false,
+      fetchUrl,
+    };
+    entries.push(entry);
+    trimEntries();
+    notify();
+
+    ownFetchUrls.add(fetchUrl);
+    fetchViaBackground(fetchUrl, headerValue)
+      .then((data) => {
+        entry.data = data;
+        entry.stats = computeStats(data);
+        notify();
+      })
+      .catch((err) => {
+        entry.error = String(err.message || err);
+        notify();
+      });
+  });
+
+  ext.devtools.network.onNavigated.addListener(() => {
+    if (preserveLog) return;
+    entries.length = 0;
+    ownFetchUrls.clear();
+    notify();
+  });
+
+  function clear() {
+    entries.length = 0;
+    ownFetchUrls.clear();
+    notify();
+  }
+
+  function setPreserveLog(enabled) {
+    preserveLog = !!enabled;
+  }
+
+  const shared = {
+    entries,
+    onChange,
+    clear,
+    setPreserveLog,
+    retryFetch,
+    getStatus: () => status,
+  };
+
+  // ------------------------------------------------------------
+  // 패널 등록 — 열릴 때마다 공유 상태를 주입한다 (윈도우당 최초 1회만)
+  // ------------------------------------------------------------
+
+  const attachedWindows = new WeakSet();
+
+  // Chrome 은 확장 루트 기준, Firefox 는 devtools_page(devtools/) 기준으로 상대경로를 해석하므로
+  // 루트 절대경로로 지정해 양쪽 모두 동일하게 동작하도록 한다.
+  ext.devtools.panels.create("Nova Debug", "", "/panel/panel.html", (panel) => {
+    panel.onShown.addListener((win) => {
+      if (attachedWindows.has(win)) return;
+      attachedWindows.add(win);
+      if (typeof win.__novaAttach === "function") win.__novaAttach(shared);
+    });
+  });
+
+  connectPort();
+  loadMaxEntries();
+  loadNovaConfig();
+})();

@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Nova Debug</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div id="popup-header">
+    <h1>Nova Debug</h1>
+    <button type="button" id="btn-open-options" class="icon-btn" aria-label="설정" title="설정">⚙</button>
+  </div>
+
+  <div id="unsupported-msg" class="hidden"></div>
+
+  <div id="site-section">
+    <div id="site-toggle-row">
+      <span class="warn-icon hidden" id="site-origin-warn" title="HTTP 연결에서는 디버그 데이터와 토큰이 평문 노출됩니다">⚠️</span>
+      <div id="site-origin"></div>
+      <button type="button" id="site-toggle" class="switch" role="switch" aria-checked="false" aria-label="헤더 주입 활성화">
+        <span class="switch-knob"></span>
+      </button>
+    </div>
+    <div id="site-toggle-hint" class="hidden"></div>
+
+    <h2>IDE 매핑</h2>
+    <label class="field-label">Protocol</label>
+    <select id="ide-protocol"></select>
+    <input type="text" id="ide-protocol-custom" class="hidden">
+
+    <label class="field-label">Local Path</label>
+    <input type="text" id="ide-localpath">
+
+    <label class="field-label">Project</label>
+    <input type="text" id="ide-project">
+
+    <label class="field-label">Fetch 경로 (비우면 기본 경로 사용)</label>
+    <div class="field-row">
+      <input type="text" id="ide-fetchpath">
+    </div>
+
+    <label class="field-label">토큰 (비우면 전역 설정 사용, 이 사이트만 다른 서버 토큰일 때 입력)</label>
+    <div class="field-row">
+      <input type="text" id="ide-token">
+      <button type="button" id="btn-gen-ide-token">자동 생성</button>
+      <button type="button" id="btn-copy-ide-token">복사</button>
+    </div>
+    <div id="ide-token-status"></div>
+
+    <div class="actions">
+      <button type="button" id="btn-save-ide">저장</button>
+      <span id="ide-save-status"></span>
+    </div>
+  </div>
+
+  <script src="../lib/protocol.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

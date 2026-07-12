@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="panel.css">
+</head>
+<body>
+  <div id="toolbar">
+    <button id="btn-clear" type="button">Clear</button>
+    <label id="preserve-label">
+      <input type="checkbox" id="chk-preserve">
+      Preserve log
+    </label>
+    <input type="text" id="filter-input" placeholder="Filter (method/url)">
+    <div id="toolbar-right">
+      <label id="show-time-label" title="요청 목록에 시간 컬럼 표시">
+        <input type="checkbox" id="chk-show-time">
+        Time
+      </label>
+      <button id="btn-open-options" type="button">전체설정</button>
+      <span id="status"></span>
+    </div>
+  </div>
+  <div id="main">
+    <div id="request-list"></div>
+    <div id="split-h"></div>
+    <div id="detail">
+      <div id="detail-header">
+        <span id="detail-header-main">요청을 선택하세요</span>
+        <span id="detail-header-summary"></span>
+      </div>
+      <div id="tab-bar">
+        <button type="button" class="tab-btn active" data-tab="dumps">Dumps<span class="tab-count"></span></button>
+        <button type="button" class="tab-btn" data-tab="queries">Queries<span class="tab-count"></span></button>
+        <button type="button" class="tab-btn" data-tab="files">Files<span class="tab-count"></span></button>
+        <button type="button" class="tab-btn" data-tab="timeline">Timeline</button>
+        <button type="button" class="tab-btn" data-tab="raw">Raw</button>
+      </div>
+      <div id="tab-content" class="d-wrap">
+        <div class="tab-panel active" data-tab="dumps" id="tab-dumps"></div>
+        <div class="tab-panel" data-tab="queries" id="tab-queries"></div>
+        <div class="tab-panel" data-tab="files" id="tab-files"></div>
+        <div class="tab-panel" data-tab="timeline" id="tab-timeline"></div>
+        <div class="tab-panel" data-tab="raw" id="tab-raw"></div>
+      </div>
+    </div>
+  </div>
+  <script src="../lib/protocol.js"></script>
+  <script src="renderer/sql-formatter.js"></script>
+  <script src="renderer/ide-link.js"></script>
+  <script src="renderer/row-renderer.js"></script>
+  <script src="renderer/query-renderer.js"></script>
+  <script src="renderer/timeline.js"></script>
+  <script src="renderer/json-view.js"></script>
+  <script src="panel.js"></script>
+</body>
+</html>

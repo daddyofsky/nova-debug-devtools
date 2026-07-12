@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Nova Debug Renderer Preview</title>
+  <link rel="stylesheet" href="../panel/panel.css">
+  <style>
+    /* preview 전용 — devtools 요청 목록 없이 상세 영역만 표시 */
+    #main { height: calc(100vh - 33px); }
+  </style>
+</head>
+<body>
+  <div id="toolbar">
+    <span>Nova Debug Renderer Preview — devtools 없이 test/fixtures/sample.json 을 렌더링합니다.</span>
+    <span id="status"></span>
+  </div>
+  <div id="main">
+    <div id="detail" style="flex:1 1 auto;">
+      <div id="detail-header">
+        <span id="detail-header-main">로딩 중...</span>
+        <span id="detail-header-summary"></span>
+      </div>
+      <div id="tab-bar">
+        <button type="button" class="tab-btn active" data-tab="dumps">Dumps<span class="tab-count"></span></button>
+        <button type="button" class="tab-btn" data-tab="queries">Queries<span class="tab-count"></span></button>
+        <button type="button" class="tab-btn" data-tab="files">Files<span class="tab-count"></span></button>
+        <button type="button" class="tab-btn" data-tab="timeline">Timeline</button>
+        <button type="button" class="tab-btn" data-tab="raw">Raw</button>
+      </div>
+      <div id="tab-content" class="d-wrap">
+        <div class="tab-panel active" data-tab="dumps" id="tab-dumps"></div>
+        <div class="tab-panel" data-tab="queries" id="tab-queries"></div>
+        <div class="tab-panel" data-tab="files" id="tab-files"></div>
+        <div class="tab-panel" data-tab="timeline" id="tab-timeline"></div>
+        <div class="tab-panel" data-tab="raw" id="tab-raw"></div>
+      </div>
+    </div>
+  </div>
+  <script src="../panel/renderer/sql-formatter.js"></script>
+  <script src="../panel/renderer/ide-link.js"></script>
+  <script src="../panel/renderer/row-renderer.js"></script>
+  <script src="../panel/renderer/query-renderer.js"></script>
+  <script src="../panel/renderer/timeline.js"></script>
+  <script src="../panel/renderer/json-view.js"></script>
+  <script src="fixtures/sample.js"></script>
+  <script src="preview.js"></script>
+</body>
+</html>

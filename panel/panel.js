@@ -1,0 +1,548 @@
+/* Nova Debug — devtools panel 컨트롤러 (순수 UI. 수집 계층은 devtools/devtools.js 가 소유) */
+(function () {
+  const ext = NovaDebugProtocol.ext;
+
+  const Renderer = window.NovaDebugRenderer;
+
+  const listEl = document.getElementById("request-list");
+  const detailHeaderMainEl = document.getElementById("detail-header-main");
+  const detailHeaderSummaryEl = document.getElementById("detail-header-summary");
+  const statusEl = document.getElementById("status");
+  const clearBtn = document.getElementById("btn-clear");
+  const openOptionsBtn = document.getElementById("btn-open-options");
+  const preserveChk = document.getElementById("chk-preserve");
+  const filterInputEl = document.getElementById("filter-input");
+  const showTimeChk = document.getElementById("chk-show-time");
+  const tabBarEl = document.getElementById("tab-bar");
+  const tabContentEl = document.getElementById("tab-content");
+  const tabPanels = {
+    dumps: document.getElementById("tab-dumps"),
+    queries: document.getElementById("tab-queries"),
+    timeline: document.getElementById("tab-timeline"),
+    files: document.getElementById("tab-files"),
+    raw: document.getElementById("tab-raw"),
+  };
+
+  const mainEl = document.getElementById("main");
+  const splitHandleEl = document.getElementById("split-h");
+
+  // devtools.js 가 소유한 entries 배열 참조 — __novaAttach 로 주입되기 전까지는 빈 배열.
+  let entries = [];
+  let shared = null;
+  let selectedEntry = null;
+  let activeTab = "dumps";
+  let hostMap = {};
+  let filterText = "";
+  let userTheme = "auto";
+  let devtoolsThemeName = ext.devtools.panels.themeName;
+  let showTime = true;
+  // 탭별 독립 검색어 — entry 전환 시에도 유지한다 (탭 간에는 공유하지 않음)
+  const tabSearch = { dumps: "", queries: "", files: "" };
+
+  // 평상시(정상 연결)에는 숨기고, connecting/reconnecting 등 비정상 상태일 때만 경고 톤으로 표시한다.
+  function setStatus(text) {
+    statusEl.textContent = text;
+    const isNormal = /^listening/.test(text || "");
+    statusEl.classList.toggle("status-hidden", isNormal);
+    statusEl.classList.toggle("status-warn", !isNormal);
+  }
+
+  // ------------------------------------------------------------
+  // 호스트 매핑 (options 페이지에서 저장) — hostname 별 {enabled, protocol, localPath, project, ...}
+  // ------------------------------------------------------------
+
+  function storageArea() {
+    return (ext.storage.sync) || ext.storage.local;
+  }
+
+  function loadHostMap() {
+    return NovaDebugProtocol.loadHostMap(storageArea())
+      .then((res) => {
+        hostMap = res || {};
+      })
+      .catch((err) => {
+        console.error("[NovaDebug] hostMap 로드 실패", err);
+        hostMap = {};
+      });
+  }
+
+  function loadTheme() {
+    return storageArea()
+      .get("theme")
+      .then((res) => {
+        userTheme = (res && res.theme) || "auto";
+        applyTheme();
+      })
+      .catch((err) => {
+        console.error("[NovaDebug] theme 로드 실패", err);
+      });
+  }
+
+  function loadShowTime() {
+    return storageArea()
+      .get("showTime")
+      .then((res) => {
+        showTime = !(res && res.showTime === false);
+        showTimeChk.checked = showTime;
+        renderList();
+      })
+      .catch((err) => {
+        console.error("[NovaDebug] showTime 로드 실패", err);
+      });
+  }
+
+  if (ext.storage.onChanged) {
+    ext.storage.onChanged.addListener((changes, area) => {
+      if (area !== "sync" && area !== "local") return;
+      if (changes[NovaDebugProtocol.STORAGE_KEYS.HOST_MAP]) {
+        hostMap = changes[NovaDebugProtocol.STORAGE_KEYS.HOST_MAP].newValue || {};
+        if (selectedEntry) renderDetail(selectedEntry);
+      }
+      if (changes.theme) {
+        userTheme = changes.theme.newValue || "auto";
+        applyTheme();
+      }
+      if (changes.showTime) {
+        showTime = changes.showTime.newValue !== false;
+        showTimeChk.checked = showTime;
+        renderList();
+      }
+    });
+  }
+
+  showTimeChk.addEventListener("change", () => {
+    storageArea()
+      .set({ showTime: showTimeChk.checked })
+      .catch((err) => {
+        console.error("[NovaDebug] showTime 저장 실패", err);
+      });
+  });
+
+  function ideConfigForUrl(url) {
+    const host = NovaDebugProtocol.extractHostname(url);
+    return (host && hostMap[host]) || {};
+  }
+
+  // ------------------------------------------------------------
+  // 목록 (요청 통계 뱃지 포함)
+  // ------------------------------------------------------------
+
+  function urlPath(url) {
+    try {
+      const u = new URL(url);
+      return u.pathname + u.search;
+    } catch {
+      return url;
+    }
+  }
+
+  function matchesFilter(entry) {
+    if (!filterText) return true;
+    return (
+      entry.method.toLowerCase().includes(filterText) ||
+      urlPath(entry.url).toLowerCase().includes(filterText)
+    );
+  }
+
+  function renderList() {
+    listEl.textContent = "";
+    for (const entry of entries.filter(matchesFilter)) {
+      const row = document.createElement("div");
+      row.className = "row";
+      if (entry.error) row.classList.add("row-error");
+      if (entry.stats && entry.stats.hasError) row.classList.add("row-data-error");
+      if (selectedEntry === entry) row.classList.add("row-selected");
+
+      if (showTime) {
+        const time = document.createElement("span");
+        time.className = "col-time";
+        time.textContent = entry.time.toLocaleTimeString();
+        row.appendChild(time);
+      }
+
+      const method = document.createElement("span");
+      method.className = "col-method";
+      method.textContent = entry.method;
+
+      const url = document.createElement("span");
+      url.className = "col-url";
+      url.textContent = urlPath(entry.url);
+      url.title = entry.url;
+
+      const badges = document.createElement("span");
+      badges.className = "col-badges";
+      if (entry.stats) {
+        if (entry.stats.queryCount) {
+          const b = document.createElement("span");
+          b.className = "list-badge list-badge-query";
+          b.textContent = "Q" + entry.stats.queryCount;
+          b.title = "쿼리 " + entry.stats.queryCount + "건";
+          badges.appendChild(b);
+        }
+        if (entry.stats.slowCount) {
+          const b = document.createElement("span");
+          b.className = "list-badge list-badge-slow";
+          b.textContent = "S" + entry.stats.slowCount;
+          b.title = "slow query " + entry.stats.slowCount + "건";
+          badges.appendChild(b);
+        }
+        if (entry.stats.hasError) {
+          const b = document.createElement("span");
+          b.className = "list-badge list-badge-error";
+          b.textContent = "ERR";
+          b.title = "에러 포함";
+          badges.appendChild(b);
+        }
+        if (entry.stats.hasRedirect) {
+          const b = document.createElement("span");
+          b.className = "list-badge list-badge-redirect";
+          b.textContent = "RDR";
+          b.title = "리다이렉트";
+          badges.appendChild(b);
+        }
+      }
+
+      row.appendChild(method);
+      row.appendChild(url);
+      row.appendChild(badges);
+
+      row.addEventListener("click", () => selectEntry(entry));
+      listEl.appendChild(row);
+    }
+  }
+
+  // ------------------------------------------------------------
+  // 상세 (탭)
+  // ------------------------------------------------------------
+
+  function setTabCount(tab, count) {
+    const el = tabBarEl.querySelector('.tab-btn[data-tab="' + tab + '"] .tab-count');
+    if (el) el.textContent = (count === null || count === undefined) ? "" : String(count);
+  }
+
+  function updateTabCounts(entry) {
+    const data = entry && entry.data;
+    const isV1 = data && data.schemaVersion === 1;
+    setTabCount("dumps", isV1 ? data.entries.length : null);
+    setTabCount("queries", isV1 ? data.summary.queries.count : null);
+    setTabCount("files", isV1 ? data.summary.files.count : null);
+  }
+
+  function clearTabPanels() {
+    Object.values(tabPanels).forEach((el) => {
+      el.innerHTML = "";
+    });
+  }
+
+  function showMessage(text) {
+    clearTabPanels();
+    tabPanels[activeTab].innerHTML = '<p class="d-empty-msg"></p>';
+    tabPanels[activeTab].querySelector(".d-empty-msg").textContent = text;
+  }
+
+  function selectRowInDumps(index) {
+    switchTab("dumps");
+    const row = tabPanels.dumps.querySelector("#d-row-" + index);
+    if (!row) return;
+    if (row.classList.contains("d-lazy")) {
+      row.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    }
+    row.classList.add("on");
+    row.scrollIntoView({ block: "center" });
+  }
+
+  function renderActiveTab(entry) {
+    const data = entry.data;
+    if (activeTab !== "raw" && data.schemaVersion !== 1) {
+      tabPanels[activeTab].innerHTML = '<p class="d-empty-msg"></p>';
+      tabPanels[activeTab].querySelector(".d-empty-msg").textContent =
+        "지원하지 않는 스키마 버전(schemaVersion=" + data.schemaVersion + ") — Raw 탭에서 원본 데이터를 확인하세요.";
+      return;
+    }
+    const ideConfig = ideConfigForUrl(entry.url);
+    if (!entry.pinned) entry.pinned = new Set();
+    const opts = {
+      slowQueryThreshold: (data.thresholds && data.thresholds.slowQueryTime) || 0,
+      tooManyCount: (data.thresholds && data.thresholds.tooManyCount) || 0,
+      ideConfig,
+      data, // frames[]/files[] 해석(resolveTrace 등)을 위해 렌더러에 원본 v1 페이로드를 전달
+      onSelect: selectRowInDumps,
+      isPinned: (idx) => entry.pinned.has(idx),
+      onTogglePin: (idx) => {
+        if (entry.pinned.has(idx)) entry.pinned.delete(idx);
+        else entry.pinned.add(idx);
+        return entry.pinned.has(idx);
+      },
+      searchText: tabSearch[activeTab] || "",
+      onSearchChange: (val) => { tabSearch[activeTab] = val; },
+    };
+
+    if (activeTab === "dumps") {
+      Renderer.RowRenderer.renderDumpsTab(tabPanels.dumps, data, opts);
+    } else if (activeTab === "queries") {
+      Renderer.QueryRenderer.renderQueriesTab(tabPanels.queries, data, opts);
+    } else if (activeTab === "timeline") {
+      Renderer.Timeline.renderTimeline(tabPanels.timeline, data, opts);
+    } else if (activeTab === "files") {
+      renderFilesTab(tabPanels.files, data, ideConfig);
+    } else if (activeTab === "raw") {
+      Renderer.JsonView.render(tabPanels.raw, data);
+    }
+  }
+
+  function renderFilesTab(container, data, ideConfig) {
+    const escHtml = Renderer.escHtml;
+    let rowsHtml = "";
+    (data.files || []).forEach((f, idx) => {
+      const link = Renderer.IdeLink.build(f.path, 0, ideConfig);
+      const open = link ? '<a href="' + escHtml(link) + '">' : "<span>";
+      const close = link ? "</a>" : "</span>";
+      const searchKey = ((f.path || "") + " " + (f.original || "")).toLowerCase();
+      rowsHtml += '<div data-search="' + escHtml(searchKey) + '"><b class="d-index">[' + idx + "]</b> " + open + escHtml(f.path) + close;
+      if (f.original) {
+        const origLink = Renderer.IdeLink.build(f.original, 0, ideConfig);
+        const oopen = origLink ? '<a href="' + escHtml(origLink) + '">' : "<span>";
+        const oclose = origLink ? "</a>" : "</span>";
+        rowsHtml += " &lt;- " + oopen + escHtml(f.original) + oclose;
+      }
+      rowsHtml += "</div>";
+    });
+
+    const searchValue = tabSearch.files || "";
+    container.innerHTML =
+      '<div class="d-files-toolbar"><div class="d-tab-search-wrap">' +
+      '<input type="text" class="d-tab-search" data-role="search" placeholder="파일 경로 검색" value="' + escHtml(searchValue) + '">' +
+      "</div></div>" +
+      '<pre class="d-content">' + rowsHtml + "</pre>";
+
+    function applyFilesSearch(term) {
+      const t = (term || "").toLowerCase();
+      container.querySelectorAll(".d-content > div").forEach((row) => {
+        row.style.display = (!t || (row.dataset.search || "").includes(t)) ? "" : "none";
+      });
+    }
+    applyFilesSearch(searchValue);
+
+    const searchInput = container.querySelector(".d-tab-search");
+    if (searchInput) {
+      searchInput.addEventListener("input", () => {
+        tabSearch.files = searchInput.value.trim();
+        applyFilesSearch(tabSearch.files);
+      });
+    }
+  }
+
+  function formatMemory(bytes) {
+    return bytes >= 1048576 ? (bytes / 1048576).toFixed(2) + "MB" : (bytes / 1024).toFixed(0) + "KB";
+  }
+
+  // 디테일 헤더 우측 컴팩트 요약 — meta.php.version / summary.time.total / summary.memory.usage 사용
+  function buildHeaderSummary(data) {
+    if (!data || data.schemaVersion !== 1) return "";
+    const parts = [];
+    const phpVersion = data.meta && data.meta.php && data.meta.php.version;
+    if (phpVersion) parts.push("PHP " + phpVersion);
+    if (typeof data.summary.time.total === "number") parts.push("T " + Math.round(data.summary.time.total * 1000) + "ms");
+    if (typeof data.summary.memory.usage === "number") parts.push("M " + formatMemory(data.summary.memory.usage));
+    return parts.join(" · ");
+  }
+
+  function renderDetail(entry) {
+    updateTabCounts(entry);
+    if (!entry) {
+      detailHeaderMainEl.textContent = "요청을 선택하세요";
+      detailHeaderSummaryEl.textContent = "";
+      clearTabPanels();
+      return;
+    }
+    detailHeaderMainEl.textContent = `${entry.method} ${entry.url} (${entry.status ?? "-"}) — ${entry.id}`;
+    detailHeaderSummaryEl.textContent = buildHeaderSummary(entry.data);
+
+    if (entry.retrying) {
+      showMessage("재조회 중...");
+    } else if (entry.error) {
+      showMessage("조회 실패: " + entry.error + " (다시 선택하면 재시도)");
+    } else if (entry.data === null) {
+      showMessage("조회 중...");
+    } else {
+      clearTabPanels();
+      renderActiveTab(entry);
+    }
+  }
+
+  function switchTab(tab) {
+    if (activeTab === tab) return;
+    activeTab = tab;
+    tabBarEl.querySelectorAll(".tab-btn").forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.tab === tab);
+    });
+    Object.entries(tabPanels).forEach(([name, el]) => {
+      el.classList.toggle("active", name === tab);
+    });
+    if (selectedEntry && selectedEntry.data) renderActiveTab(selectedEntry);
+  }
+
+  tabBarEl.addEventListener("click", (e) => {
+    const btn = e.target.closest(".tab-btn");
+    if (btn) switchTab(btn.dataset.tab);
+  });
+
+  // trace/Files 탭의 IDE 링크는 devtools 패널 컨텍스트에서 anchor 기본 동작(navigation)이 통하지 않아
+  // 별도 가로채기가 필요하다 (devtools API 가 없는 preview 등에서는 기본 동작 그대로 유지됨).
+  Renderer.IdeLink.installClickInterceptor(tabContentEl);
+
+  function selectEntry(entry) {
+    selectedEntry = entry;
+    renderList();
+    renderDetail(entry);
+    if (entry && entry.error && !entry.retrying && shared) shared.retryFetch(entry);
+  }
+
+  // ------------------------------------------------------------
+  // devtools.js 가 소유한 공유 상태(entries/상태 변경 알림) 를 주입받는다.
+  // panel window 는 패널이 숨겨져도 유지되므로 devtools.js 가 윈도우당 최초 1회만 호출하는 게
+  // 정상 경로지만, 브라우저별 window 식별 차이로 재호출될 수 있어 이전 구독을 항상 해제한다.
+  // ------------------------------------------------------------
+
+  let detachOnChange = null;
+
+  window.__novaAttach = function (sharedState) {
+    if (detachOnChange) {
+      detachOnChange();
+      detachOnChange = null;
+    }
+
+    shared = sharedState;
+    entries = shared.entries;
+    shared.setPreserveLog(preserveChk.checked);
+
+    detachOnChange = shared.onChange(() => {
+      setStatus(shared.getStatus());
+      if (selectedEntry && entries.indexOf(selectedEntry) === -1) {
+        selectedEntry = null;
+      }
+      renderList();
+      renderDetail(selectedEntry);
+    });
+
+    setStatus(shared.getStatus());
+    renderList();
+    renderDetail(selectedEntry);
+  };
+
+  clearBtn.addEventListener("click", () => {
+    if (shared) shared.clear();
+  });
+
+  // DevTools 패널 컨텍스트는 확장 API 접근이 제한적이라 runtime.openOptionsPage 가 없을 수 있어
+  // 그 경우 background 에 위임한다.
+  openOptionsBtn.addEventListener("click", () => {
+    if (typeof ext.runtime.openOptionsPage === "function") {
+      ext.runtime.openOptionsPage().catch((err) => {
+        console.error("[NovaDebug] 옵션 페이지 열기 실패", err);
+      });
+      return;
+    }
+    ext.runtime.sendMessage({ type: NovaDebugProtocol.MSG.OPEN_OPTIONS }).catch((err) => {
+      console.error("[NovaDebug] 옵션 페이지 열기 요청 실패", err);
+    });
+  });
+
+  preserveChk.addEventListener("change", () => {
+    if (shared) shared.setPreserveLog(preserveChk.checked);
+  });
+
+  filterInputEl.addEventListener("input", () => {
+    filterText = filterInputEl.value.trim().toLowerCase();
+    renderList();
+  });
+
+  // userTheme 이 auto 면 devtools 테마를 따르고, light/dark 면 강제 적용한다.
+  function applyTheme() {
+    const effective = userTheme === "auto" ? devtoolsThemeName : userTheme;
+    document.documentElement.setAttribute("data-theme", effective === "dark" ? "dark" : "light");
+  }
+  applyTheme();
+
+  // devtools 테마 실시간 반영 — Chrome/Firefox 는 API 형태가 달라 존재 여부로 감지한다.
+  // 둘 다 없으면 최초 1회 반영(applyTheme 위 호출)만 유지된다.
+  function onDevtoolsThemeChanged(themeName) {
+    devtoolsThemeName = themeName;
+    applyTheme();
+  }
+  if (typeof ext.devtools.panels.setThemeChangeHandler === "function") {
+    ext.devtools.panels.setThemeChangeHandler(onDevtoolsThemeChanged);
+  } else if (ext.devtools.panels.onThemeChanged && typeof ext.devtools.panels.onThemeChanged.addListener === "function") {
+    ext.devtools.panels.onThemeChanged.addListener(onDevtoolsThemeChanged);
+  }
+
+  // ------------------------------------------------------------
+  // 레이아웃 스플리터 — 요청 목록/상세 영역 폭을 드래그로 조절, storage.local 에 비율 영속화
+  // ------------------------------------------------------------
+
+  const SPLIT_STORAGE_KEY = "novaDebugSplitRatio";
+  const SPLIT_MIN_RATIO = 0.2;
+  const SPLIT_MAX_RATIO = 0.75;
+
+  function applySplitRatio(ratio) {
+    listEl.style.width = (ratio * 100) + "%";
+  }
+
+  function loadSplitRatio() {
+    const area = ext.storage && ext.storage.local;
+    if (!area) return;
+    area
+      .get(SPLIT_STORAGE_KEY)
+      .then((res) => {
+        const ratio = res && res[SPLIT_STORAGE_KEY];
+        if (typeof ratio === "number" && ratio >= SPLIT_MIN_RATIO && ratio <= SPLIT_MAX_RATIO) {
+          applySplitRatio(ratio);
+        }
+      })
+      .catch(() => {});
+  }
+
+  function saveSplitRatio(ratio) {
+    const area = ext.storage && ext.storage.local;
+    if (!area) return;
+    area.set({ [SPLIT_STORAGE_KEY]: ratio }).catch(() => {});
+  }
+
+  function setupSplitter() {
+    if (!splitHandleEl || !mainEl) return;
+    let dragging = false;
+
+    splitHandleEl.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      dragging = true;
+      splitHandleEl.classList.add("dragging");
+      document.body.style.cursor = "col-resize";
+    });
+
+    document.addEventListener("mousemove", (e) => {
+      if (!dragging) return;
+      const rect = mainEl.getBoundingClientRect();
+      let ratio = (e.clientX - rect.left) / rect.width;
+      ratio = Math.min(SPLIT_MAX_RATIO, Math.max(SPLIT_MIN_RATIO, ratio));
+      applySplitRatio(ratio);
+    });
+
+    document.addEventListener("mouseup", () => {
+      if (!dragging) return;
+      dragging = false;
+      splitHandleEl.classList.remove("dragging");
+      document.body.style.cursor = "";
+      const ratio = parseFloat(listEl.style.width) / 100;
+      if (!isNaN(ratio)) saveSplitRatio(ratio);
+    });
+
+    loadSplitRatio();
+  }
+  setupSplitter();
+
+  renderList();
+  renderDetail(null);
+  loadHostMap();
+  loadTheme();
+  loadShowTime();
+})();

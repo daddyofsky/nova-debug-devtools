@@ -1,0 +1,277 @@
+html, body {
+  margin: 0;
+  padding: 16px 20px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 13px;
+  color: #1b1b1b;
+  background: #fff;
+}
+
+h1 {
+  font-size: 16px;
+  margin: 24px 0 8px;
+}
+
+h1:first-of-type {
+  margin-top: 0;
+}
+
+.hint {
+  color: #666;
+  max-width: 640px;
+  line-height: 1.5;
+  margin: 0 0 16px;
+}
+
+table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  max-width: 1200px;
+}
+
+col.col-enabled { width: 4%; }
+col.col-host { width: 13%; }
+col.col-protocol { width: 9%; }
+col.col-localpath { width: 18%; }
+col.col-project { width: 10%; }
+col.col-fetchpath { width: 15%; }
+col.col-token { width: 25%; }
+col.col-remove { width: 6%; }
+
+th, td {
+  border: 1px solid #d0d0d0;
+  padding: 4px 6px;
+  text-align: left;
+  overflow-wrap: break-word;
+}
+
+th {
+  background: #f3f3f3;
+  font-size: 12px;
+}
+
+td input, td select {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 12px;
+  padding: 3px 4px;
+}
+
+td:has(.f-enabled) {
+  text-align: center;
+}
+
+td .f-enabled {
+  width: auto;
+  cursor: pointer;
+}
+
+.f-protocol-custom {
+  margin-top: 4px;
+}
+
+.f-token-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.f-token-wrap .f-token {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.f-token-wrap .icon-btn {
+  flex: none;
+  cursor: pointer;
+  padding: 2px 6px;
+}
+
+#theme-options {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+#theme-options label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+#list-options {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  margin-bottom: 8px;
+}
+
+#list-options label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+#max-entries {
+  width: 80px;
+  box-sizing: border-box;
+  font-size: 12px;
+  padding: 3px 4px;
+}
+
+.invalid {
+  border-color: #d32f2f !important;
+  outline: 1px solid #d32f2f;
+}
+
+.hidden {
+  display: none !important;
+}
+
+#transport-options {
+  max-width: 900px;
+  margin-bottom: 8px;
+}
+
+.field-block {
+  display: block;
+  margin-bottom: 12px;
+  font-size: 12px;
+}
+
+.field-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.field-row input[type="text"] {
+  flex: 1 1 auto;
+  box-sizing: border-box;
+  font-size: 12px;
+  padding: 4px 6px;
+}
+
+.small-hint {
+  font-size: 12px;
+  margin-top: -4px;
+}
+
+.btn-remove {
+  cursor: pointer;
+}
+
+#btn-add {
+  margin-top: 10px;
+}
+
+#chrome-policy-details {
+  max-width: 1200px;
+  margin-bottom: 16px;
+}
+
+#chrome-policy-details summary {
+  cursor: pointer;
+  font-size: 16px;
+  padding: 4px 0;
+}
+
+#chrome-policy-details .details-body {
+  margin-top: 8px;
+}
+
+#chrome-policy-details h2 {
+  font-size: 14px;
+  margin: 16px 0 8px;
+}
+
+#chrome-policy-details h2:first-of-type {
+  margin-top: 8px;
+}
+
+.code-block {
+  display: block;
+  width: 100%;
+  max-width: 1200px;
+  box-sizing: border-box;
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 1px solid #d0d0d0;
+  border-radius: 3px;
+  background: #f3f3f3;
+  font-family: ui-monospace, "SF Mono", Monaco, Consolas, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.small-list {
+  max-width: 640px;
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: #666;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+code {
+  padding: 1px 4px;
+  border-radius: 2px;
+  background: #f3f3f3;
+  font-family: ui-monospace, "SF Mono", Monaco, Consolas, monospace;
+}
+
+.actions {
+  margin-top: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+#save-status {
+  color: #2e7d32;
+}
+
+#copy-status,
+#copy-windows-status,
+#token-status {
+  color: #2e7d32;
+}
+
+@media (prefers-color-scheme: dark) {
+  html, body {
+    color: #e8eaed;
+    background: #202124;
+  }
+  .hint {
+    color: #9aa0a6;
+  }
+  th, td {
+    border-color: #3c4043;
+  }
+  th {
+    background: #292a2d;
+  }
+  #save-status {
+    color: #81c995;
+  }
+  #copy-status,
+  #copy-windows-status,
+  #token-status {
+    color: #81c995;
+  }
+  .code-block {
+    border-color: #3c4043;
+    background: #292a2d;
+  }
+  .small-list {
+    color: #9aa0a6;
+  }
+  code {
+    background: #292a2d;
+  }
+}

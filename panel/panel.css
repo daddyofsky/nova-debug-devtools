@@ -1,0 +1,1176 @@
+/* Nova Debug — devtools panel 스타일. CSS 변수 기반 라이트/다크 테마 */
+
+:root {
+  --nd-bg: #ffffff;
+  --nd-bg-alt: #f3f3f3;
+  --nd-bg-alt2: #f9f9f9;
+  --nd-text: #1b1b1b;
+  --nd-text-dim: #888888;
+  --nd-border: #d0d0d0;
+  --nd-border-soft: #ececec;
+  --nd-accent: #77f;
+  --nd-row-hover: #f0f6ff;
+  --nd-row-selected: #d7e8ff;
+  --nd-error: #b3261e;
+  --nd-header-bg: #77f;
+  --nd-header-text: #fff;
+  --nd-data-bg: #eef;
+  --nd-data-border: #333;
+  --nd-remark-bg: #ffcfaf;
+  --nd-badge-dup: #e74c3c;
+  --nd-badge-loop: #e67e22;
+  --nd-badge-slow: #f1c40f;
+  --nd-warn-bg: #ffa900;
+  --nd-table-bg: #879ff1;
+  --nd-table-text: #fff;
+  --nd-section-title-bg: #999;
+  --nd-dml-bg: #fcfc7a;
+  --nd-dml-text: #333;
+  --nd-json-key: #881391;
+  --nd-json-string: #0b8a3d;
+  --nd-json-number: #1a5fb4;
+  --nd-json-boolean: #c2410c;
+  --nd-json-null: #888888;
+  --nd-json-punct: #888888;
+  --nd-font: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --nd-font-mono: ui-monospace, "SF Mono", Monaco, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --nd-bg: #202124;
+    --nd-bg-alt: #292a2d;
+    --nd-bg-alt2: #26272a;
+    --nd-text: #e8eaed;
+    --nd-text-dim: #9aa0a6;
+    --nd-border: #3c4043;
+    --nd-border-soft: #303134;
+    --nd-accent: #89b4fa;
+    --nd-row-hover: #2d333b;
+    --nd-row-selected: #2c4a6e;
+    --nd-error: #f28b82;
+    --nd-header-bg: #313244;
+    --nd-header-text: #cdd6f4;
+    --nd-data-bg: #313244;
+    --nd-data-border: #585b70;
+    --nd-remark-bg: #7a3a1a;
+    --nd-table-bg: #5b7bcf;
+    --nd-table-text: #e0e6ff;
+    --nd-section-title-bg: #585b70;
+    --nd-dml-bg: #e8d44d;
+    --nd-dml-text: #1a1a00;
+    --nd-json-key: #d2a8ff;
+    --nd-json-string: #7ee787;
+    --nd-json-number: #79c0ff;
+    --nd-json-boolean: #ffa657;
+    --nd-json-null: #9aa0a6;
+    --nd-json-punct: #9aa0a6;
+  }
+}
+
+:root[data-theme="dark"] {
+  --nd-bg: #202124;
+  --nd-bg-alt: #292a2d;
+  --nd-bg-alt2: #26272a;
+  --nd-text: #e8eaed;
+  --nd-text-dim: #9aa0a6;
+  --nd-border: #3c4043;
+  --nd-border-soft: #303134;
+  --nd-accent: #89b4fa;
+  --nd-row-hover: #2d333b;
+  --nd-row-selected: #2c4a6e;
+  --nd-error: #f28b82;
+  --nd-header-bg: #313244;
+  --nd-header-text: #cdd6f4;
+  --nd-data-bg: #313244;
+  --nd-data-border: #585b70;
+  --nd-remark-bg: #7a3a1a;
+  --nd-table-bg: #5b7bcf;
+  --nd-table-text: #e0e6ff;
+  --nd-section-title-bg: #585b70;
+  --nd-dml-bg: #e8d44d;
+  --nd-dml-text: #1a1a00;
+  --nd-json-key: #d2a8ff;
+  --nd-json-string: #7ee787;
+  --nd-json-number: #79c0ff;
+  --nd-json-boolean: #ffa657;
+  --nd-json-null: #9aa0a6;
+  --nd-json-punct: #9aa0a6;
+}
+
+:root[data-theme="light"] {
+  --nd-bg: #ffffff;
+  --nd-bg-alt: #f3f3f3;
+  --nd-bg-alt2: #f9f9f9;
+  --nd-text: #1b1b1b;
+  --nd-text-dim: #888888;
+  --nd-border: #d0d0d0;
+  --nd-border-soft: #ececec;
+  --nd-accent: #77f;
+  --nd-row-hover: #f0f6ff;
+  --nd-row-selected: #d7e8ff;
+  --nd-error: #b3261e;
+  --nd-header-bg: #77f;
+  --nd-header-text: #fff;
+  --nd-data-bg: #eef;
+  --nd-data-border: #333;
+  --nd-remark-bg: #ffcfaf;
+  --nd-table-bg: #879ff1;
+  --nd-table-text: #fff;
+  --nd-section-title-bg: #999;
+  --nd-dml-bg: #fcfc7a;
+  --nd-dml-text: #333;
+  --nd-json-key: #881391;
+  --nd-json-string: #0b8a3d;
+  --nd-json-number: #1a5fb4;
+  --nd-json-boolean: #c2410c;
+  --nd-json-null: #888888;
+  --nd-json-punct: #888888;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: var(--nd-font);
+  font-size: 12px;
+  color: var(--nd-text);
+  background: var(--nd-bg);
+}
+
+#toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--nd-border);
+  background: var(--nd-bg-alt);
+}
+
+#toolbar button {
+  font-size: 12px;
+  padding: 2px 8px;
+}
+
+#preserve-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+#filter-input {
+  flex: 0 1 220px;
+  padding: 2px 6px;
+  border: 1px solid var(--nd-border);
+  border-radius: 3px;
+  background: var(--nd-bg);
+  color: var(--nd-text);
+  font-size: 12px;
+}
+
+#toolbar-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+#show-time-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  color: var(--nd-text-dim);
+}
+
+#status {
+  color: var(--nd-text-dim);
+}
+
+#status.status-hidden {
+  display: none;
+}
+
+#status.status-warn {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 3px;
+  color: #fff;
+  background: var(--nd-error);
+  font-weight: 700;
+}
+
+#main {
+  display: flex;
+  height: calc(100% - 33px);
+  min-height: 0;
+}
+
+#request-list {
+  width: 42%;
+  min-width: 200px;
+  max-width: 78%;
+  flex: 0 0 auto;
+  overflow-y: auto;
+  border-right: 1px solid var(--nd-border);
+  min-height: 0;
+}
+
+/* 요청 목록/상세 드래그 스플리터 — panel.js setupSplitter()가 폭 조절 + storage.local 영속화 */
+#split-h {
+  flex: 0 0 auto;
+  width: 5px;
+  cursor: col-resize;
+  background: var(--nd-border-soft);
+}
+
+#split-h:hover,
+#split-h.dragging {
+  background: var(--nd-accent);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--nd-border-soft);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.row:hover {
+  background: var(--nd-row-hover);
+}
+
+.row-selected {
+  background: var(--nd-row-selected);
+}
+
+.row-error {
+  color: var(--nd-error);
+}
+
+.row-data-error {
+  font-weight: 600;
+}
+
+.col-time {
+  color: var(--nd-text-dim);
+  flex: 0 0 auto;
+}
+
+.col-method {
+  flex: 0 0 auto;
+  font-weight: 600;
+}
+
+.col-url {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.col-badges {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 3px;
+}
+
+.list-badge {
+  display: inline-block;
+  padding: 0 4px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 14px;
+  color: #fff;
+}
+
+.list-badge-query { background: var(--nd-table-bg); }
+.list-badge-slow { background: var(--nd-badge-slow); color: #333; }
+.list-badge-error { background: var(--nd-error); }
+.list-badge-redirect { background: #0077cc; }
+
+#detail {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
+}
+
+#detail-header {
+  box-sizing: border-box;
+  flex-shrink: 0;
+  height: 27px;
+  padding: 6px 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--nd-border);
+  background: var(--nd-bg-alt2);
+  font-family: var(--nd-font-mono);
+  line-height: 14px;
+}
+
+#detail-header-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#detail-header-summary {
+  flex: 0 0 auto;
+  color: var(--nd-text-dim);
+  font-size: 11px;
+}
+
+#tab-bar {
+  display: flex;
+  border-bottom: 1px solid var(--nd-border);
+  background: var(--nd-bg-alt);
+}
+
+.tab-btn {
+  padding: 6px 12px;
+  border: none;
+  background: none;
+  color: var(--nd-text-dim);
+  font-size: 12px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+
+.tab-btn:hover {
+  color: var(--nd-text);
+}
+
+.tab-btn.active {
+  color: var(--nd-text);
+  border-bottom-color: var(--nd-accent);
+  font-weight: 600;
+}
+
+.tab-count {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--nd-bg-alt2);
+  color: var(--nd-text-dim);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 14px;
+  vertical-align: middle;
+}
+
+.tab-btn.active .tab-count {
+  background: var(--nd-border-soft);
+  color: var(--nd-text);
+}
+
+.tab-count:empty {
+  display: none;
+}
+
+#tab-content {
+  flex: 1 1 auto;
+  overflow: auto;
+  font-size: 12px;
+  min-height: 0;
+}
+
+.tab-panel {
+  display: none;
+  padding: 8px;
+  min-height: 0;
+}
+
+.tab-panel.active {
+  display: block;
+}
+
+#tab-raw {
+  padding: 0;
+}
+
+/* ── Raw 탭 — JSON 트리 뷰 (json-view.js) ── */
+.d-json-root {
+  padding: 8px;
+  font-family: var(--nd-font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+/* 스크롤 중에도 접근 쉽도록 #tab-content 상단에 고정. 부모(.d-json-root)의 8px 패딩만큼 음수 마진으로 가장자리까지 채운다 */
+.d-json-toolbar {
+  position: sticky;
+  top: -8px;
+  z-index: 1;
+  margin: -8px -8px 8px;
+  padding: 6px 8px;
+  display: flex;
+  justify-content: flex-end;
+  background: var(--nd-bg-alt2);
+  border-bottom: 1px solid var(--nd-border-soft);
+}
+
+/* Raw 탭 상단 전체 복사 버튼 — 행별 복사 버튼(.d-copy-btn)과 달리 hover 없이 항상 노출.
+   .d-copy-btn 단독 규칙(visibility:hidden)이 파일 뒤쪽에 있어 소스 순서로는 밀리므로 결합 선택자로 명시적으로 우선시킨다. */
+.d-copy-btn.d-copy-btn-static {
+  visibility: visible;
+  width: auto;
+  padding: 0 8px;
+}
+
+.d-json-line {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.d-json-toggle-line {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.d-json-toggle {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 20px;
+  margin-right: 4px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--nd-text-dim);
+  font-family: var(--nd-font-mono);
+  font-size: 20px;
+  line-height: 20px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.d-json-children {
+  margin-left: 6px;
+  padding-left: 8px;
+  border-left: 1px dotted var(--nd-border);
+}
+
+.d-json-node.d-json-collapsed > .d-json-children,
+.d-json-node.d-json-collapsed > .d-json-close-line {
+  display: none;
+}
+
+.d-json-summary {
+  display: none;
+  margin-left: 6px;
+  color: var(--nd-text-dim);
+  font-style: italic;
+}
+
+.d-json-node.d-json-collapsed > .d-json-toggle-line > .d-json-summary {
+  display: inline;
+}
+
+.d-json-key { color: var(--nd-json-key); }
+.d-json-punct { color: var(--nd-json-punct); }
+.d-json-string { color: var(--nd-json-string); }
+.d-json-number { color: var(--nd-json-number); }
+.d-json-boolean { color: var(--nd-json-boolean); }
+.d-json-null { color: var(--nd-json-null); }
+
+.d-empty-msg {
+  color: var(--nd-text-dim);
+  padding: 20px 0;
+  text-align: center;
+}
+
+/* ── Dumps rows (Nova/debug/assets/debug.css 이식) ── */
+.d-row {
+  margin: 0 0 8px;
+}
+
+.d-row-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 3px 6px;
+  background: var(--nd-bg-alt2);
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.d-row-summary:hover {
+  background: var(--nd-row-hover);
+}
+
+.d-row.on .d-row-summary {
+  outline: 2px solid var(--nd-accent);
+}
+
+.d-row.d-lazy {
+  min-height: 24px;
+}
+
+.d-index {
+  color: var(--nd-accent);
+  margin-right: 3px;
+}
+
+.d-label {
+  color: var(--nd-error);
+  margin-right: 5px;
+}
+
+.d-label.d-error {
+  color: var(--nd-header-text);
+  background-color: var(--nd-error);
+  padding: 1px 5px;
+  border-radius: 2px;
+}
+
+.d-label.d-redirect {
+  color: var(--nd-header-text);
+  background-color: #0077cc;
+  padding: 1px 5px;
+  border-radius: 2px;
+}
+
+.d-type-btn {
+  height: 18px;
+  padding: 0 3px;
+  margin-right: 5px;
+  border: 1px solid var(--nd-data-border);
+  border-radius: 2px;
+  color: var(--nd-text);
+  background-color: var(--nd-data-bg);
+  font-size: 11px;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.d-row-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  max-height: 3.6em;
+}
+
+.d-row.on .d-row-text {
+  overflow: visible;
+  max-height: none;
+}
+
+.d-row.d-remark .d-row-summary,
+.d-row-summary.d-remark {
+  background-color: var(--nd-remark-bg);
+}
+
+/* 행 복사 버튼 (Dumps/Queries 공용) — 행에 마우스를 올렸을 때만 노출 */
+.d-copy-btn {
+  flex-shrink: 0;
+  visibility: hidden;
+  width: 20px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--nd-data-border);
+  border-radius: 2px;
+  color: var(--nd-text);
+  background-color: var(--nd-data-bg);
+  font-size: 11px;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.d-row-summary:hover .d-copy-btn,
+.d-q-row:hover .d-copy-btn {
+  visibility: visible;
+}
+
+.d-copy-btn.d-copy-done {
+  visibility: visible;
+  color: #fff;
+  background-color: #3a923a;
+  border-color: #3a923a;
+}
+
+/* ── 탭 내 검색 (Dumps/Queries/Files 공용, 탭별 독립) ── */
+.d-tab-search-wrap {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.d-tab-search {
+  width: 180px;
+  padding: 2px 6px;
+  border: 1px solid var(--nd-border);
+  border-radius: 3px;
+  background: var(--nd-bg);
+  color: var(--nd-text);
+  font-size: 11px;
+}
+
+.d-files-toolbar {
+  display: flex;
+  margin-bottom: 8px;
+}
+
+/* ── Dumps 탭 툴바 — PIN/LOOP/DUP/SLOW 필터 칩 ── */
+.d-dumps-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.d-filter-chip {
+  padding: 2px 8px;
+  border: 1px solid var(--nd-border);
+  border-radius: 10px;
+  background: var(--nd-bg-alt);
+  color: var(--nd-text-dim);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.d-filter-chip:hover {
+  color: var(--nd-text);
+}
+
+.d-filter-chip.d-filter-loop.on {
+  background: var(--nd-badge-loop);
+  border-color: var(--nd-badge-loop);
+  color: #fff;
+}
+
+.d-filter-chip.d-filter-dup.on {
+  background: var(--nd-badge-dup);
+  border-color: var(--nd-badge-dup);
+  color: #fff;
+}
+
+.d-filter-chip.d-filter-pin.on {
+  background: var(--nd-accent);
+  border-color: var(--nd-accent);
+  color: #fff;
+}
+
+.d-filter-chip.d-filter-slow.on {
+  background: var(--nd-badge-slow);
+  border-color: var(--nd-badge-slow);
+  color: #333;
+}
+
+.d-filter-chip-empty {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.d-dump {
+  display: none;
+  margin: 6px 0 6px 20px;
+  padding: 8px;
+  max-height: 400px;
+  overflow: auto;
+  font-family: var(--nd-font-mono);
+  font-size: 11px;
+  border: 1px solid var(--nd-data-border);
+  background-color: var(--nd-data-bg);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.d-dump.show {
+  display: block;
+}
+
+/* 원본 동작: trace 블록 자체는 행 선택(.d-row.on) 시에만 노출된다 */
+.d-trace {
+  display: none;
+  margin: 6px 0 6px 20px;
+  padding: 0;
+}
+
+.d-trace.d-empty {
+  display: none !important;
+}
+
+.d-row.on .d-trace {
+  display: block;
+}
+
+.d-trace-toggle {
+  float: left;
+  margin-right: 10px;
+  width: 22px;
+  height: 18px;
+  border: 1px solid var(--nd-border);
+  border-radius: 2px;
+  background: none;
+  cursor: pointer;
+  color: var(--nd-text-dim);
+}
+
+.d-trace-toggle:before {
+  content: "+";
+}
+
+.d-trace-toggle.on:before {
+  content: "-";
+}
+
+.d-trace-toggle.single {
+  visibility: hidden;
+}
+
+/* 원본 동작: trace-data는 CSS grid(3열: idx/file:line/func)로 항목마다 자동 줄바꿈되고,
+   토글이 꺼진 상태에서는 height 고정 + overflow:hidden으로 첫 줄만 보인다(완전히 숨기지 않음) */
+.d-trace-data {
+  display: grid;
+  grid-template-columns: 20px minmax(160px, 320px) 1fr;
+  grid-gap: 2px 8px;
+  margin: 0;
+  padding: 0 2px;
+  height: 18px;
+  overflow: hidden;
+  font-size: 11px;
+}
+
+.d-trace-data > :nth-child(3n + 1) {
+  text-align: right;
+}
+
+.d-trace-data > :nth-child(3n + 3) {
+  white-space: nowrap;
+}
+
+.d-trace-toggle.on + .d-trace-data {
+  height: auto;
+  overflow: auto;
+}
+
+.d-trace-data a {
+  color: var(--nd-text-dim);
+  text-decoration: none;
+}
+
+.d-trace-data a:hover {
+  color: var(--nd-accent);
+}
+
+.d-trace-data code {
+  display: inline-block;
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  border-radius: 2px;
+  padding: 0 2px;
+  background-color: var(--nd-data-bg);
+}
+
+.d-args {
+  cursor: pointer;
+}
+
+.d-args-full {
+  display: block;
+  margin: 4px 0 4px 30px;
+  padding: 6px;
+  max-height: 200px;
+  overflow: auto;
+  font-family: var(--nd-font-mono);
+  font-size: 11px;
+  background: var(--nd-data-bg);
+  border: 1px solid var(--nd-data-border);
+  white-space: pre-wrap;
+}
+
+.d-query-info {
+  margin: 6px 0 6px 20px;
+  overflow: auto;
+}
+
+.d-query-info table {
+  border-collapse: collapse;
+  border: 1px solid var(--nd-data-border);
+}
+
+.d-query-info th,
+.d-query-info td {
+  padding: 4px;
+  font-size: 11px;
+  border: 1px solid var(--nd-data-border);
+}
+
+.d-badge {
+  display: inline-block;
+  margin-right: 5px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: default;
+}
+
+.d-dup { background-color: var(--nd-badge-dup); }
+.d-loop { background-color: var(--nd-badge-loop); }
+
+.d-table {
+  display: inline-block;
+  margin-right: 5px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: var(--nd-table-text);
+  background-color: var(--nd-table-bg);
+}
+
+/* SQL formatter tags (SQLFormatter::pretty output)
+   원본 동작: 미선택 행은 white-space 기본값(normal)이라 포맷(들여쓰기/개행)이 한 줄로 collapse되고,
+   행 선택(.d-row.on) 시에만 white-space:pre로 전환되어 SQL format 결과가 그대로 보인다. */
+.d-row .d-sql {
+  display: inline;
+  padding: 0 2px;
+  font-family: var(--nd-font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  word-break: break-all;
+}
+
+.d-row.on .d-sql {
+  display: block;
+  padding: 4px 6px;
+  white-space: pre;
+  word-break: normal;
+}
+
+.d-kw { color: #0061c0; font-weight: bold; }
+.d-kw-sub { color: #0061c0; font-weight: normal; }
+.d-kw-join { color: #3a923a; font-weight: bold; }
+.d-kw-union { color: #9c27b0; font-weight: bold; }
+.d-tbl { color: #ff3700; font-weight: bold; }
+.d-dml { font-weight: bold; background-color: var(--nd-dml-bg); color: var(--nd-dml-text); }
+
+/* ── Queries 탭 ── */
+.d-section-title {
+  margin: 0 0 6px;
+  padding: 6px 8px;
+  color: var(--nd-header-text);
+  background-color: var(--nd-section-title-bg);
+  font-size: 12px;
+}
+
+.d-query-stats {
+  margin-bottom: 8px;
+  padding: 6px 8px;
+  background: var(--nd-bg-alt);
+  border-bottom: 1px solid var(--nd-border);
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--nd-text-dim);
+}
+
+.d-query-stats b {
+  color: var(--nd-text);
+}
+
+.d-stat-line {
+  display: block;
+}
+
+/* ── Queries 탭 — 순서기준/테이블별 토글 + 간결한 목록 (Summary 와 중복되는 헤더 바는 표시하지 않는다) ── */
+.d-q-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  margin: 0 0 6px;
+}
+
+.d-q-view-toggle {
+  display: flex;
+  flex-shrink: 0;
+  border: 1px solid var(--nd-border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.d-q-view-btn {
+  padding: 4px 10px;
+  border: none;
+  background: var(--nd-bg-alt);
+  color: var(--nd-text-dim);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.d-q-view-btn + .d-q-view-btn {
+  border-left: 1px solid var(--nd-border);
+}
+
+.d-q-view-btn.active {
+  background: var(--nd-accent);
+  color: #fff;
+}
+
+.d-q-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px;
+  border-bottom: 1px solid var(--nd-border-soft);
+  cursor: pointer;
+}
+
+.d-q-row:hover {
+  background: var(--nd-row-hover);
+}
+
+.d-q-row.d-remark {
+  background-color: var(--nd-remark-bg);
+}
+
+.d-q-time {
+  flex-shrink: 0;
+  color: var(--nd-text-dim);
+  font-family: var(--nd-font-mono);
+}
+
+.d-q-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--nd-font-mono);
+}
+
+.d-table-group-header {
+  margin: 10px 0 2px;
+  padding: 4px 6px;
+  background: var(--nd-bg-alt);
+  border-radius: 3px;
+  font-size: 11px;
+  color: var(--nd-text-dim);
+}
+
+.d-table-group-header:first-child {
+  margin-top: 0;
+}
+
+/* ── Timeline 탭 ── */
+/* Timeline: 겹치는 쿼리는 grid-auto-flow:dense 로 여러 행(레인)에 배치한다(JS가 각 아이템의
+   grid-row 를 구간 스케줄링으로 계산 — 가로 위치/폭은 margin-left/width % 로 그대로 유지).
+   TIME 단계(parts) 배경은 별도 절대배치 레이어로 두어 레인 수와 무관하게 항상 전체 높이(라벨
+   행 + 쿼리 트랙)를 덮는다. 단계 라벨은 쿼리 레인과 겹치지 않도록 전용 라벨 행에 그린다. */
+.d-timeline-wrap {
+  position: relative;
+}
+
+.d-timeline-parts {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: 2px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.d-timeline-parts .d-part {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  min-width: 1px;
+  box-sizing: border-box;
+  background-color: #afe1f0;
+  border-right: 1px solid #8fd5ea;
+}
+
+.d-timeline-parts .d-part:nth-child(4n+2) { background-color: #dff9b5; border-right-color: #a7d85a; }
+.d-timeline-parts .d-part:nth-child(4n+3) { background-color: #feff77; border-right-color: #fbcfa0; }
+.d-timeline-parts .d-part:nth-child(4n)   { background-color: #fedfe5; border-right-color: #f89fbc; }
+
+.d-timeline-part-labels {
+  position: relative;
+  z-index: 1;
+  height: 14px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.12);
+}
+
+.d-part-label {
+  position: absolute;
+  top: 0;
+  height: 14px;
+  line-height: 14px;
+  padding-left: 4px;
+  box-sizing: border-box;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  color: #333;
+}
+
+/* 레인(행) 구분선 — row-gap(2px) 위치에만 은은한 가로선을 그려 레인이 1개뿐일 때는
+   보이지 않고, 여러 레인일 때만 행 사이 경계가 드러난다 (16px 행 + 2px gap = 18px 주기). */
+.d-timeline {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-auto-flow: dense;
+  grid-auto-rows: 16px;
+  row-gap: 2px;
+  min-height: 16px;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0 16px,
+    rgba(0, 0, 0, 0.12) 16px 17px,
+    transparent 17px 18px
+  );
+}
+
+.d-tl-item {
+  position: relative;
+  grid-column: 1;
+  justify-self: start;
+  height: 16px;
+  min-width: 1px;
+  box-sizing: border-box;
+  background-color: #4caf50;
+  border: 1px solid #388e3c;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.d-tl-item.d-q-mid {
+  background-color: var(--nd-warn-bg);
+  border-color: #e65100;
+}
+
+.d-tl-item.d-q-slow {
+  background-color: #e53935;
+  border-color: #b71c1c;
+}
+
+.d-tl-tip {
+  display: none;
+  position: absolute;
+  z-index: 20;
+  max-width: 480px;
+  max-height: 240px;
+  overflow: auto;
+  padding: 6px 8px;
+  border-radius: 3px;
+  border: 1px solid var(--nd-data-border);
+  background: var(--nd-data-bg);
+  color: var(--nd-text);
+  font-family: var(--nd-font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-all;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+}
+
+.d-tl-tip-head {
+  margin-bottom: 4px;
+  font-weight: 700;
+}
+
+.d-timeline-footer {
+  display: flex;
+  align-items: flex-start;
+  margin-top: 8px;
+}
+
+.d-timeline-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--nd-text-dim);
+}
+
+.d-tl-part-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.d-tl-part-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background-color: #afe1f0;
+  border: 1px solid #8fd5ea;
+}
+
+.d-timeline-summary .d-tl-part-item:nth-child(4n+2) .d-tl-part-swatch { background-color: #dff9b5; border-color: #a7d85a; }
+.d-timeline-summary .d-tl-part-item:nth-child(4n+3) .d-tl-part-swatch { background-color: #feff77; border-color: #fbcfa0; }
+.d-timeline-summary .d-tl-part-item:nth-child(4n)   .d-tl-part-swatch { background-color: #fedfe5; border-color: #f89fbc; }
+
+.d-timeline-legend {
+  display: flex;
+  gap: 12px;
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--nd-text-dim);
+}
+
+.d-tl-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.d-tl-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: #4caf50;
+}
+
+.d-tl-swatch.d-q-mid { background: var(--nd-warn-bg); }
+.d-tl-swatch.d-q-slow { background: #e53935; }
+
+/* ── Files / Summary 탭 ── */
+#tab-files .d-content {
+  font-family: var(--nd-font-mono);
+  font-size: 11px;
+}
+
+#tab-files .d-content div {
+  padding: 1px 0;
+}
+
+#tab-files a {
+  color: var(--nd-accent);
+}
+
+.d-summary-table {
+  border-collapse: collapse;
+}
+
+.d-summary-table th,
+.d-summary-table td {
+  padding: 4px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--nd-border-soft);
+  font-size: 12px;
+}
+
+.d-summary-table th {
+  color: var(--nd-text-dim);
+  font-weight: 600;
+  white-space: nowrap;
+}
