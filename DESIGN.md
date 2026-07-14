@@ -58,17 +58,15 @@ X-Nova-Debug: 1
 
 - background가 패널이 열린 tab의 요청에만 주입 (main_frame, sub_frame, xhr/fetch 등 전체 리소스 타입 중 문서/XHR 계열만)
 - 옵션 페이지의 **호스트 테이블(`hostMap`)** 에서 `enabled`인 호스트에만 주입 (개발자 신호 유출 방지, §4.3)
-- **`ext.token` 설정 시**: 값이 `"1"` 고정이 아니라 서버 `ext.token`과 정확히 일치해야 한다(`hash_equals`).
-  `ext.token` 미설정(기본값 `''`)이면 기존처럼 헤더 존재 여부만으로 협상된다(하위호환) — 확장은
-  옵션 페이지(또는 팝업)에서 호스트별 토큰을 `hostMap[host].token`(없으면 전역 토큰)으로 설정하고,
-  헤더 값을 `"1"` 대신 그 토큰으로 주입해야 한다.
-- **복수 토큰 (`ext.tokens`, 2026-07-12)**: 팀원별로 서로 다른 토큰을 발급하고 싶을 때 사용하는 배열 설정.
+- **`ext.tokens` 설정 시**: 값이 `"1"` 고정이 아니라 서버 `ext.tokens` 항목 중 하나와 정확히
+  일치해야 한다(`hash_equals`). `ext.tokens` 미설정(기본값 `[]`)이면 기존처럼 헤더 존재 여부만으로
+  협상된다(하위호환) — 확장은 옵션 페이지(또는 팝업)에서 호스트별 토큰을 `hostMap[host].token`
+  (없으면 전역 토큰)으로 설정하고, 헤더 값을 `"1"` 대신 그 토큰으로 주입해야 한다.
+- **복수 토큰 (`ext.tokens`)**: 팀원별로 서로 다른 토큰을 발급하고 싶을 때 사용하는 배열 설정.
   각 항목은 `token`(필수) + `label`(선택, 식별용 — 로깅/노출에는 아직 미사용) + `ip`(선택, `REMOTE_ADDR`
   정규식)로 구성된다. `ip`를 지정한 토큰은 헤더 값 일치에 더해 요청 IP가 그 패턴에도 매치해야
   유효하다 — 예: 재택 IP가 유동적인 팀원에게는 `ip` 없이 토큰만 발급하고, 고정 IP 팀원에게는
-  `ip`로 한 번 더 조인다. `ext.tokens`가 비어 있으면 기존 `ext.token` 단일 비교로 폴백한다.
-  `ext.token`과 `ext.tokens`를 동시에 설정하면 마이그레이션 편의를 위해 **합집합**으로 유효 처리된다
-  (`ext.token`은 `ip` 제약 없이 전역 `isAllowed()`만 적용).
+  `ip`로 한 번 더 조인다.
 
 ### 2.2 응답 헤더 (서버 → 확장)
 
@@ -89,19 +87,19 @@ X-Nova-Debug-Id: 260712_014215_3956137818287cf6
 ```
 GET {log.apiUrl}?fetch={id}
 → 200 application/json  (저장된 디버그 JSON 원본)
-→ 403 (isAllowed() 실패 또는 ext.token 불일치)
+→ 403 (isAllowed() 실패 또는 ext.tokens 불일치)
 → 404 (만료/없음/id 형식 불일치)
 ```
 
 - 기존 `assets/log.php` 에 `fetch` 액션 추가 (신규 파일 없이 기존 apiUrl 재사용)
-- 인증: `Debug::isAllowed()` (전역 IP) **AND** `Debug::isExtTokenValid()` (`ext.token`/`ext.tokens`
-  설정 시 요청 헤더 `X-Nova-Debug` 값이 토큰과 `hash_equals` 일치해야 함 — `ext.tokens` 항목에 `ip`가
+- 인증: `Debug::isAllowed()` (전역 IP) **AND** `Debug::isExtTokenValid()` (`ext.tokens`
+  설정 시 요청 헤더 `X-Nova-Debug` 값이 토큰과 `hash_equals` 일치해야 함 — 항목에 `ip`가
   있으면 그 토큰은 `REMOTE_ADDR`이 해당 패턴에도 매치해야 함) + `Debug::isEnabled()` 게이트.
-  둘 다 미설정이면 기존처럼 IP만으로 통과(하위호환) — id 추측 공격 차단이 목적이므로
-  운영에서는 `ext.token`/`ext.tokens` 설정을 권장한다.
+  미설정이면 기존처럼 IP만으로 통과(하위호환) — id 추측 공격 차단이 목적이므로
+  운영에서는 `ext.tokens` 설정을 권장한다.
 - **토큰 게이트는 `fetch` 액션 전용이 아니라 `log.php` 최상단(2026-07-12)**: `isEnabled`/`isAllowed`
   바로 다음에 `isExtTokenValid()` 를 적용해 로그 뷰어 액션(`action=list`/`read`)까지 포함한 전체
-  진입점이 토큰 필수가 된다. `Debug::hasExtToken()`(`ext.token`/`ext.tokens` 중 하나라도 설정)이
+  진입점이 토큰 필수가 된다. `Debug::hasExtToken()`(`ext.tokens` 설정 여부)이
   false면 `isExtTokenValid()` 가 자동으로 true 를 반환해 기존 동작 그대로 통과(하위호환).
 - **토큰 쿠키 폴백(2026-07-12)**: `isExtTokenValid()`는 요청 헤더(`X-Nova-Debug`) 값을 먼저 검사하고,
   헤더가 없거나 불일치하면 토큰 쿠키(신규 설정 `ext.tokenCookie`, 기본값 `NOVA_DEBUG_TOKEN` — 기존
@@ -144,8 +142,8 @@ document.cookie = 'NOVA_DEBUG_TOKEN=<발급받은 토큰 값>'
 'ext.enabled'       => true,
 'ext.requestHeader' => 'X-Nova-Debug',      // HTTP_X_NOVA_DEBUG
 'ext.idHeader'      => 'X-Nova-Debug-Id',
-'ext.token'         => '',                  // 기본 '' = 미설정(IP만으로 opt-in, 하위호환)
-'ext.tokens'        => [],                  // 복수 토큰: [['token'=>'...', 'label'=>'daddy', 'ip'=>'/^192\.168\./'], ...]
+'ext.tokens'        => [],                  // 기본 [] = 미설정(IP만으로 opt-in, 하위호환)
+                                             // 복수 토큰: [['token'=>'...', 'label'=>'daddy', 'ip'=>'/^192\.168\./'], ...]
 'ext.tokenCookie'   => 'NOVA_DEBUG_TOKEN',  // 헤더 미일치/부재 시 폴백 검증에 쓰는 쿠키명(§2.3.1)
 'ext.lifetime'      => 1800,
 ```
@@ -156,9 +154,9 @@ public static function isExtensionMode(): bool
 
 public static function isExtTokenValid(): bool
 // 요청 헤더 값으로 먼저 검사(ext.tokens 항목 중 하나라도 hash_equals 매치 && (ip 미지정 또는
-// REMOTE_ADDR이 ip 패턴 매치)면 true. ext.token 도 ip 제약 없이 합집합으로 유효 처리).
+// REMOTE_ADDR이 ip 패턴 매치)면 true).
 // 헤더가 미일치/부재면 ext.tokenCookie 쿠키 값으로 동일 검증 재시도(§2.3.1).
-// ext.tokens/ext.token 둘 다 미설정이면 true(하위호환)
+// ext.tokens가 미설정이면 true(하위호환)
 
 public static function isInlineFallbackAllowed(): bool
 // ext.only=true면 무조건 false. 그 외엔 (토큰 미설정 || isExtTokenValid()) && !isExtensionMode()
@@ -265,7 +263,7 @@ debug/
 
 - Firefox MV3의 DNR은 `tabIds` 조건 미지원 이슈가 있어 webRequest blocking(Firefox는 MV3에서도 지원) 사용
 - `header-inject.js` 가 두 구현을 감싸서 background/main.js 에는 `enable(tabId)/disable(tabId)` 만 노출
-- **주입 값 토큰화(2026-07-12)**: `ext.token` 도입에 따라 정적 값 `"1"` 고정 대신 host별 유효
+- **주입 값 토큰화(2026-07-12)**: `ext.tokens` 도입에 따라 정적 값 `"1"` 고정 대신 host별 유효
   토큰(`tokenForHost()`)을 주입한다. Chrome DNR은 탭당 rule 1개 고정 대신, 탭당 rule id 블록
   (`DNR_RULE_ID_BASE + tabId*100` ~ `+99`)을 예약해 **토큰 값이 같은 host끼리 그룹화 → 그룹당
   rule 1개**로 생성한다(대부분 전역 토큰 하나뿐이라 사실상 기존과 동일하게 rule 1개). Firefox
@@ -341,8 +339,8 @@ panel close / port disconnect
 
 | 항목 | 대응 |
 |---|---|
-| 조회 endpoint 무단 접근 | `Debug::isEnabled()` + `isAllowed()` (전역 IP) + `isExtTokenValid()` (`ext.token`/`ext.tokens` 설정 시) — id 추측만으로는 조회 불가 |
-| 토큰 설정 시 비-확장 경로 우회 열람 | `ext.token`/`ext.tokens` 가 하나라도 설정되면(`Debug::hasExtToken()`) 인페이지 폴백(`isInlineFallbackAllowed()`)과 `log.php` 의 로그 뷰어 액션(list/read)까지 포함한 모든 디버그 표면에 토큰이 필수가 된다 — 헤더 없이 브라우저로 직접 접속해 IP 게이트만으로 디버그 데이터를 열람하던 경로 차단(2026-07-12) |
+| 조회 endpoint 무단 접근 | `Debug::isEnabled()` + `isAllowed()` (전역 IP) + `isExtTokenValid()` (`ext.tokens` 설정 시) — id 추측만으로는 조회 불가 |
+| 토큰 설정 시 비-확장 경로 우회 열람 | `ext.tokens` 가 설정되면(`Debug::hasExtToken()`) 인페이지 폴백(`isInlineFallbackAllowed()`)과 `log.php` 의 로그 뷰어 액션(list/read)까지 포함한 모든 디버그 표면에 토큰이 필수가 된다 — 헤더 없이 브라우저로 직접 접속해 IP 게이트만으로 디버그 데이터를 열람하던 경로 차단(2026-07-12) |
 | 토큰 설정 서버 + 확장 미설치 브라우저 접속 | 토큰 쿠키(`ext.tokenCookie`, 2026-07-12)를 직접 설정하면 헤더 없이도 `isExtTokenValid()` 통과 → 인페이지 폴백/로그 뷰어 열람 가능. `ext.only=true` 면 쿠키가 있어도 인페이지 폴백은 항상 차단(확장 전용 강제). 쿠키는 서버가 심어주지 않고 개발자가 브라우저에서 직접 설정해야 하며, HTTP(비-HTTPS) 사이트에서는 쿠키 값이 평문으로 전송되니 신뢰할 수 있는 네트워크에서만 사용한다 |
 | 토큰 유출 시 확산 범위 | `ext.tokens`로 팀원별 토큰 분리 발급 가능. 특정 토큰에 `ip` 정규식을 지정하면 그 토큰은 고정 IP에서만 유효 — 유출돼도 다른 네트워크에서는 통과 불가 |
 | id 추측 | `bin2hex(random_bytes(8))` 16자 hex 접미사(고정 길이), 파일명 정규식 검증, 조회 자체가 IP AND 토큰 이중 게이트 |
@@ -350,7 +348,7 @@ panel close / port disconnect
 | 디버그 파일 잔존 | ext 채널 cleanup, `ext.lifetime` (기본 30분) |
 | 개발자 신호 유출 | 헤더 주입을 옵션의 허용 호스트로 제한 |
 | 서버 내부 경로 노출 | 조회 URL을 응답 헤더로 노출하지 않음(`X-Nova-Debug-Fetch` 제거, 2026-07-12) — 확장이 자체 설정으로 경로 구성 |
-| 운영 환경 노출 | `ext.enabled` + 기존 `enabled` 이중 게이트 + `ext.token` 설정 시 IP 유출만으로는 협상 불가 (운영은 어차피 debug off) |
+| 운영 환경 노출 | `ext.enabled` + 기존 `enabled` 이중 게이트 + `ext.tokens` 설정 시 IP 유출만으로는 협상 불가 (운영은 어차피 debug off) |
 
 ---
 

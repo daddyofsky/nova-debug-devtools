@@ -159,6 +159,28 @@ html, body {
   cursor: pointer;
 }
 
+#capture-open-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  color: var(--nd-text-dim);
+}
+
+#capture-open-label.disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+#capture-notice {
+  color: #e8820c;
+  font-size: 11px;
+}
+
+#capture-notice:empty {
+  display: none;
+}
+
 #filter-input {
   flex: 0 1 220px;
   padding: 2px 6px;

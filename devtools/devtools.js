@@ -18,6 +18,7 @@
   const RECONNECT_MAX_DELAY_MS = 5000;
   const HEARTBEAT_INTERVAL_MS = 15000; // background(SW/event page) idle 타임아웃(통상 30s)보다 짧게 유지
   const HEARTBEAT_TIMEOUT_MS = 10000;
+  const NAV_COMMITTED_FRESH_MS = 1500; // NAV_COMMITTED 매칭 entry의 최대 허용 나이(reload 오매칭 방지)
 
   const entries = [];
   const listeners = new Set();
@@ -92,6 +93,23 @@
   // background 가 우리 자신의 dump 조회 요청(fetchViaBackground/fetchViaTab)을 다시
   // "새 요청"으로 감지해 entries 에 재등록하는 재귀를 막기 위한 자기 요청 URL 추적.
   const ownFetchUrls = new Set();
+
+  // devtools_page 의 runtime 은 부분 노출이라(ext.tabs 부재와 같은 원리) getBrowserInfo 같은
+  // 메서드가 없을 수 있어, devtools_page 를 포함한 모든 확장 컨텍스트에 존재하는 browser
+  // 전역(Chrome 에는 없음) 유무로 판별한다. lib/protocol.js 의 ext = root.browser || chrome
+  // 선택과 동일한 기준이다.
+  const isFirefox = typeof browser !== "undefined";
+
+  // fragment(#hash)만 제거해 비교 — 쿼리스트링은 유지한다.
+  function stripFragment(url) {
+    try {
+      const u = new URL(url);
+      u.hash = "";
+      return u.href;
+    } catch (err) {
+      return url;
+    }
+  }
 
   function notify() {
     listeners.forEach((cb) => {
@@ -195,6 +213,9 @@
       if (msg.type === MSG.PONG && heartbeatTimeoutTimer) {
         clearTimeout(heartbeatTimeoutTimer);
         heartbeatTimeoutTimer = null;
+      }
+      if (msg.type === MSG.NAV_COMMITTED) {
+        handleNavCommitted(msg.url);
       }
     });
 
@@ -340,12 +361,62 @@
       });
   });
 
-  ext.devtools.network.onNavigated.addListener(() => {
+  ext.devtools.network.onNavigated.addListener((url) => {
     if (preserveLog) return;
+
+    // Firefox 는 onNavigated 가 문서 요청 완료(entry 추가)보다 한참 뒤(관찰상 ~700ms 지연)
+    // 발화되어, 전체 clear 시 방금 추가된 문서 entry는 물론 그 뒤에 이미 붙은 새 페이지의
+    // ajax entry들까지 지워진다(Chromium 은 커밋 시점에 먼저 발화되어 clear 시점엔 아직
+    // entry 가 없으므로 전체 clear가 안전). entries 는 시간순 append 이므로, navigate 된
+    // URL과 일치하는 가장 최근 occurrence의 인덱스를 찾아 그 인덱스부터 끝까지(문서 entry +
+    // 그 뒤에 붙은 새 페이지 소속 entry 전부)를 보존하고, 그 앞(이전 페이지 소속, reload라면
+    // 이전 로드분 포함)만 제거한다.
+    if (isFirefox) {
+      const navigatedUrl = stripFragment(url);
+      let matchedIndex = -1;
+      for (let i = entries.length - 1; i >= 0; i--) {
+        if (stripFragment(entries[i].url) === navigatedUrl) {
+          matchedIndex = i;
+          break;
+        }
+      }
+      entries.splice(0, matchedIndex === -1 ? entries.length : matchedIndex);
+      ownFetchUrls.clear();
+      entries.forEach((entry) => ownFetchUrls.add(entry.fetchUrl));
+      notify();
+      return;
+    }
+
     entries.length = 0;
     ownFetchUrls.clear();
     notify();
   });
+
+  // background 가 webNavigation.onCommitted 를 릴레이한 것(Firefox 전용, 위 onNavigated 보다
+  // 훨씬 이르게 도착) — 커밋 시점에 이전 페이지 entry를 미리 정리해 Chromium과 비슷한 체감을
+  // 준다. freshness(NAV_COMMITTED_FRESH_MS) 조건 없이 URL만 매칭하면 reload(같은 URL 재로드)
+  // 때 이전 로드의 entry가 매칭되어 잘못 보존되므로, 방금(1.5초 이내) 추가된 entry만 매칭
+  // 대상으로 삼는다. 이 레이스(커밋 메시지가 문서 requestFinished 보다 늦게 도착하는 극소형
+  // 응답 등)에서 방금 추가된 문서 entry를 지우지 않도록 보호하는 목적도 겸한다.
+  // 빠른 연속 reload(<1.5s)로 이전 entry가 fresh 조건에 걸려 잘못 남더라도, 늦게 도착하는
+  // 기존 onNavigated 핸들러(위, keep-from-latest-match)가 최신 로드분만 남기며 자가 교정한다.
+  function handleNavCommitted(url) {
+    if (preserveLog) return;
+    const navigatedUrl = stripFragment(url);
+    const now = Date.now();
+    let matchedIndex = -1;
+    for (let i = entries.length - 1; i >= 0; i--) {
+      const entry = entries[i];
+      if (stripFragment(entry.url) === navigatedUrl && now - entry.time.getTime() <= NAV_COMMITTED_FRESH_MS) {
+        matchedIndex = i;
+        break;
+      }
+    }
+    entries.splice(0, matchedIndex === -1 ? entries.length : matchedIndex);
+    ownFetchUrls.clear();
+    entries.forEach((entry) => ownFetchUrls.add(entry.fetchUrl));
+    notify();
+  }
 
   function clear() {
     entries.length = 0;
@@ -374,7 +445,13 @@
 
   // Chrome 은 확장 루트 기준, Firefox 는 devtools_page(devtools/) 기준으로 상대경로를 해석하므로
   // 루트 절대경로로 지정해 양쪽 모두 동일하게 동작하도록 한다.
-  ext.devtools.panels.create("Nova Debug", "", "/panel/panel.html", (panel) => {
+  // panels.create 는 devtools 오픈 시 1회만 실행되어 이후 테마가 바뀌어도 아이콘을 갱신할 수 없으므로,
+  // 생성 시점의 테마 기준으로 dark 배경에서도 묻히지 않는 반전 아이콘을 선택한다.
+  const panelIcon =
+    ext.devtools.panels.themeName === "dark"
+      ? "/icons/icon32-invert.png"
+      : "/icons/icon32.png";
+  ext.devtools.panels.create("Nova Debug", panelIcon, "/panel/panel.html", (panel) => {
     panel.onShown.addListener((win) => {
       if (attachedWindows.has(win)) return;
       attachedWindows.add(win);

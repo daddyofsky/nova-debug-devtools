@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Nova Debug",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Nova Debug 서버 응답을 DevTools 패널에서 조회",
   "browser_specific_settings": {
     "gecko": {
@@ -29,7 +29,7 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "permissions": ["storage", "webRequest", "webRequestBlocking", "scripting", "clipboardWrite"],
+  "permissions": ["storage", "webRequest", "webRequestBlocking", "scripting", "clipboardWrite", "webNavigation"],
   "host_permissions": ["<all_urls>"],
   "options_ui": {
     "page": "options/options.html",

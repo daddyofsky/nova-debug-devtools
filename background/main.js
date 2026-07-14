@@ -17,7 +17,7 @@ if (typeof importScripts === "function") {
   const HeaderInject = root.NovaHeaderInject;
 
   // headerValue: 조회 대상 origin 의 유효 토큰(effectiveToken) — devtools.js 가 계산해 넘긴다.
-  // 서버가 fetch 액션도 IP AND ext.token(설정 시) 이중 게이트로 검사하므로 협상 헤더와
+  // 서버가 fetch 액션도 IP AND ext.tokens(설정 시) 이중 게이트로 검사하므로 협상 헤더와
   // 동일한 X-Nova-Debug 헤더를 조회 요청에도 실어야 한다.
   async function fetchDebugJson(url, headerValue) {
     const headers = headerValue ? { [REQUEST_HEADER]: headerValue } : {};
@@ -106,6 +106,10 @@ if (typeof importScripts === "function") {
     return true; // Chrome: 비동기 sendResponse 를 위해 필수
   });
 
+  // REGISTER 된 tabId → devtools port. webNavigation.onCommitted 를 해당 탭의 devtools
+  // 포트로 릴레이하는 데 쓴다(탭당 devtools 포트는 하나).
+  const registeredPorts = new Map();
+
   ext.runtime.onConnect.addListener((port) => {
     if (port.name !== PORT_NAME) return;
 
@@ -116,6 +120,7 @@ if (typeof importScripts === "function") {
 
       if (msg.type === MSG.REGISTER) {
         tabId = msg.tabId;
+        registeredPorts.set(tabId, port);
         HeaderInject.enable(tabId).catch((err) =>
           console.error("[NovaDebug] header inject enable 실패", err)
         );
@@ -136,11 +141,32 @@ if (typeof importScripts === "function") {
 
     port.onDisconnect.addListener(() => {
       if (tabId === null) return;
+      // 재연결 레이스로 이미 새 port 가 같은 tabId 로 등록돼 있을 수 있어, 이 port 가 여전히
+      // 현재 등록된 port 일 때만 제거한다.
+      if (registeredPorts.get(tabId) === port) registeredPorts.delete(tabId);
       HeaderInject.disable(tabId).catch((err) =>
         console.error("[NovaDebug] header inject disable 실패", err)
       );
     });
   });
+
+  // Firefox 전용: devtools.network.onNavigated 발화가 문서 요청 완료보다 한참(관찰상 ~700ms)
+  // 늦어 그 사이 이전 페이지 entry가 남는 문제 — 커밋 시점(webNavigation.onCommitted)을
+  // devtools 포트로 릴레이해 더 이르게 정리할 수 있게 한다. Chrome 은 devtools onNavigated 가
+  // 이미 커밋 시점이라 webNavigation 권한을 넣지 않으므로 ext.webNavigation 이 undefined —
+  // 가드로 건너뛴다(동작 불변).
+  if (ext.webNavigation) {
+    ext.webNavigation.onCommitted.addListener((details) => {
+      if (details.frameId !== 0) return; // 메인 프레임만 — iframe 커밋은 무시
+      const port = registeredPorts.get(details.tabId);
+      if (!port) return;
+      try {
+        port.postMessage({ type: MSG.NAV_COMMITTED, url: details.url });
+      } catch (err) {
+        console.error("[NovaDebug] NAV_COMMITTED 릴레이 실패", err);
+      }
+    });
+  }
 
   // popup 토글로 등록된 탭은 DevTools onDisconnect 경로를 타지 않으므로,
   // 탭이 닫힐 때 직접 정리한다.

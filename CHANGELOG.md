@@ -2,6 +2,17 @@
 
 이 문서는 Nova Debug DevTools 확장의 릴리즈 이력을 기록한다.
 
+## [1.0.1] - 2026-07-13
+
+### DevTools 패널
+
+- DevTools 탭 아이콘 dark 테마 대응 — 테마가 dark면 흑백 반전 아이콘(`icons/icon*-invert.png`)을 사용해 어두운 탭 배경에서도 아이콘이 보이도록 수정 (아이콘은 DevTools 오픈 시점 테마 기준, 테마 변경 시 DevTools 재오픈 필요. Chrome은 패널 아이콘 미표시)
+- Firefox에서 문서 요청 entry가 목록에 나타났다 바로 사라지는 버그 수정 — Firefox는 `onNavigated`가 문서 요청 완료보다 늦게(관찰상 ~700ms) 발화해 내비게이션 clear가 방금 추가된 entry까지 지우던 문제. Firefox에서는 navigate된 URL과 일치하는 최근 entry부터 끝까지(문서 + 후속 ajax) 보존하고 이전 페이지 소속만 제거한다 (Chromium은 커밋 시점 발화라 기존 전체 clear 유지)
+
+### 보안
+
+- 서버 레거시 단일 토큰 설정 `ext.token` 제거 — 복수 토큰 `ext.tokens`([{token, label?, ip?}])로 통일 (서버측 `Nova/debug` 라이브러리 변경). 옵션 페이지·문서의 안내 문구도 `ext.tokens` 기준으로 정리
+
 ## [1.0.0] - 2026-07-12
 
 최초 릴리즈. Chrome/Firefox DevTools 안에서 Nova Debug 서버 출력을 요청별 패널로 조회하는 확장.
