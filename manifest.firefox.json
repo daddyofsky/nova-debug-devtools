@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Nova Debug",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Nova Debug 서버 응답을 DevTools 패널에서 조회",
   "browser_specific_settings": {
     "gecko": {
@@ -11,7 +11,7 @@
   },
   "devtools_page": "devtools/devtools.html",
   "background": {
-    "scripts": ["lib/protocol.js", "background/header-inject.js", "background/main.js"]
+    "scripts": ["lib/protocol.js", "background/header-inject.js", "background/icon-state.js", "background/main.js"]
   },
   "action": {
     "default_title": "Nova Debug",
@@ -29,7 +29,13 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "permissions": ["storage", "webRequest", "webRequestBlocking", "scripting", "clipboardWrite", "webNavigation"],
+  "commands": {
+    "toggle-site": {
+      "suggested_key": { "default": "Ctrl+F12", "mac": "Command+F12" },
+      "description": "현재 사이트 Nova Debug on/off"
+    }
+  },
+  "permissions": ["storage", "webRequest", "webRequestBlocking", "scripting", "clipboardWrite", "webNavigation", "tabs"],
   "host_permissions": ["<all_urls>"],
   "options_ui": {
     "page": "options/options.html",

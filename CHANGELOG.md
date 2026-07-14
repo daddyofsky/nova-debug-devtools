@@ -2,12 +2,36 @@
 
 이 문서는 Nova Debug DevTools 확장의 릴리즈 이력을 기록한다.
 
+## [1.0.2] - 2026-07-15
+
+### 캡쳐 트리거
+
+- 캡쳐(헤더 주입)를 Nova Debug 패널 탭이 표시된 동안만 수행하도록 변경 — 패널을 보고 있지 않은 탭의 불필요한 서버 수집 제거
+- 호스트별 "오픈 캡쳐"(`captureOnOpen`) 설정 추가 — 켜면 DevTools가 열려 있는 동안 항상 캡쳐. 옵션 페이지 호스트 테이블 또는 패널 툴바 "Always (DevTools open)" 체크박스에서 설정 (변경은 다음 DevTools 오픈부터 적용)
+- 체크박스 hover/토글 시 현재 캡쳐 모드와 적용 시점 안내를 체크박스 왼쪽에 잠시 표시
+
+### 단축키
+
+- 현재 사이트 on/off 토글 단축키 추가 — Firefox `Cmd+F12`(Win/Linux `Ctrl+F12`), Chrome `Cmd+Shift+K`(Win/Linux `Ctrl+Shift+K`)
+- 옵션 페이지 "단축키" 섹션 추가 — 현재 단축키 표시, Firefox는 페이지에서 직접 변경·기본값 복원, Chrome은 브라우저 단축키 설정 열기 버튼 제공
+
+### 버그 수정
+
+- Firefox: DevTools 재오픈 시 이전 세션의 캡쳐 상태가 남아 패널 표시 전부터 캡쳐되던 문제 수정
+- Firefox: 패널 첫 화면에서 "Always (DevTools open)" 체크박스가 비활성으로 잘못 표시되던 문제 수정
+- Firefox: 체크박스 토글 시 적용 시점 안내가 표시되지 않던 문제 수정
+
 ## [1.0.1] - 2026-07-13
+
+### 툴바
+
+- 사이트별 사용 여부에 따라 툴바 아이콘 구분 표시 — 켜진 사이트의 탭은 진한 기본 아이콘, 꺼져 있거나 지원하지 않는 페이지는 흐린 아이콘(`icons/icon*-off.png`). popup·옵션에서 on/off 변경 시 열린 탭 전체에 즉시 반영 (Firefox `tabs` 권한 추가)
 
 ### DevTools 패널
 
 - DevTools 탭 아이콘 dark 테마 대응 — 테마가 dark면 흑백 반전 아이콘(`icons/icon*-invert.png`)을 사용해 어두운 탭 배경에서도 아이콘이 보이도록 수정 (아이콘은 DevTools 오픈 시점 테마 기준, 테마 변경 시 DevTools 재오픈 필요. Chrome은 패널 아이콘 미표시)
-- Firefox에서 문서 요청 entry가 목록에 나타났다 바로 사라지는 버그 수정 — Firefox는 `onNavigated`가 문서 요청 완료보다 늦게(관찰상 ~700ms) 발화해 내비게이션 clear가 방금 추가된 entry까지 지우던 문제. Firefox에서는 navigate된 URL과 일치하는 최근 entry부터 끝까지(문서 + 후속 ajax) 보존하고 이전 페이지 소속만 제거한다 (Chromium은 커밋 시점 발화라 기존 전체 clear 유지)
+- Firefox에서 문서 요청 entry가 목록에 나타났다 바로 사라지는 버그 수정 — 내비게이션 시 목록 정리가 새 페이지의 entry(문서 + 후속 ajax)를 지우지 않도록 보존 (Chrome 동작 불변)
+- Firefox에서 Preserve log 미사용 시 이전 페이지 요청이 새 요청 추가 후에야 뒤늦게 지워지던 문제 수정 — Chrome과 동일하게 내비게이션 커밋 시점에 즉시 정리 (Firefox `webNavigation` 권한 추가)
 
 ### 보안
 

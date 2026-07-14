@@ -33,6 +33,13 @@
   // fetch 경로/토큰 유효 설정 계산에 쓰는 원본 storage 값 — NovaDebugProtocol.effectiveFetchPath/
   // effectiveToken(origin, novaConfig) 로 소비한다.
   let novaConfig = { hostMap: {}, token: "" };
+  // 패널이 현재 표시 중인지 — 캡쳐는 패널이 표시된 동안만(onShown 승격/onHidden 해제).
+  // background(SW/event page) 재시작 후 재연결 시 현재 표시 상태를 다시 보내야 하므로
+  // devtools 수명 동안 플래그로 유지한다.
+  let panelVisible = false;
+  // inspected 페이지의 현재 URL — 패널의 사이트별 캡쳐 설정(captureOnOpen 체크박스)이
+  // 어느 호스트를 가리키는지 판별하는 데 쓴다. 초기값은 eval, 이후 내비게이션 시 갱신.
+  let pageUrl = "";
 
   function storageArea() {
     return ext.storage.sync || ext.storage.local;
@@ -146,7 +153,7 @@
     }
   }
 
-  // background 가 유휴 종료 후 재시작되면 등록 상태(activeTabIds 등)를 잃는다.
+  // background 가 유휴 종료 후 재시작되면 등록 상태(activeTabs 등)를 잃는다.
   // 정상적으로는 port.onDisconnect 가 이를 감지해 재연결하지만, 그 이벤트가 지연/누락되면
   // (Firefox 에서 관찰됨) devtools 패널은 죽은 port 를 산 것으로 착각해 REGISTER 를 다시 보내지
   // 않는다 — heartbeat 로 이를 능동적으로 감지해 강제 재연결한다.
@@ -203,6 +210,10 @@
       type: MSG.REGISTER,
       tabId: ext.devtools.inspectedWindow.tabId,
     });
+    // SW 재시작 후 재연결이면 background의 캡쳐 승격 상태가 사라졌으므로 표시 중일 때 다시 승격한다.
+    if (panelVisible) {
+      port.postMessage({ type: MSG.PANEL_SHOWN });
+    }
 
     reconnectAttempts = 0;
     setStatus("listening (tab " + ext.devtools.inspectedWindow.tabId + ")");
@@ -361,8 +372,23 @@
       });
   });
 
+  function sendPanelVisibility(visible) {
+    if (panelVisible === visible) return;
+    panelVisible = visible;
+    if (!port) return;
+    try {
+      port.postMessage({ type: visible ? MSG.PANEL_SHOWN : MSG.PANEL_HIDDEN });
+    } catch (err) {
+      // port가 죽어 있으면 재연결 경로(connectPort)가 panelVisible 플래그로 현재 상태를 다시 보낸다
+    }
+  }
+
   ext.devtools.network.onNavigated.addListener((url) => {
-    if (preserveLog) return;
+    pageUrl = url;
+    if (preserveLog) {
+      notify(); // 목록은 유지하되 패널의 현재 호스트 표시(캡쳐 설정)는 갱신
+      return;
+    }
 
     // Firefox 는 onNavigated 가 문서 요청 완료(entry 추가)보다 한참 뒤(관찰상 ~700ms 지연)
     // 발화되어, 전체 clear 시 방금 추가된 문서 entry는 물론 그 뒤에 이미 붙은 새 페이지의
@@ -401,7 +427,11 @@
   // 빠른 연속 reload(<1.5s)로 이전 entry가 fresh 조건에 걸려 잘못 남더라도, 늦게 도착하는
   // 기존 onNavigated 핸들러(위, keep-from-latest-match)가 최신 로드분만 남기며 자가 교정한다.
   function handleNavCommitted(url) {
-    if (preserveLog) return;
+    pageUrl = url;
+    if (preserveLog) {
+      notify();
+      return;
+    }
     const navigatedUrl = stripFragment(url);
     const now = Date.now();
     let matchedIndex = -1;
@@ -435,6 +465,7 @@
     setPreserveLog,
     retryFetch,
     getStatus: () => status,
+    getPageUrl: () => pageUrl,
   };
 
   // ------------------------------------------------------------
@@ -453,13 +484,36 @@
       : "/icons/icon32.png";
   ext.devtools.panels.create("Nova Debug", panelIcon, "/panel/panel.html", (panel) => {
     panel.onShown.addListener((win) => {
+      sendPanelVisibility(true);
       if (attachedWindows.has(win)) return;
       attachedWindows.add(win);
       if (typeof win.__novaAttach === "function") win.__novaAttach(shared);
+    });
+    panel.onHidden.addListener(() => {
+      sendPanelVisibility(false);
     });
   });
 
   connectPort();
   loadMaxEntries();
   loadNovaConfig();
+
+  // 초기 URL — 내비게이션 이벤트가 오기 전(패널을 바로 열었을 때)에도 현재 호스트를 알 수 있도록.
+  // eval 반환 형태가 다르다: Chrome 은 callback(result), Firefox 는 promise([result, errorInfo]).
+  // Firefox 에 callback 을 넘기면 무시되어 pageUrl 이 빈 값으로 남고, 패널의 사이트별 캡쳐
+  // 체크박스가 "허용 호스트 아님"(비활성)으로 잘못 표시된다.
+  function applyInitialPageUrl(result) {
+    if (typeof result === "string" && !pageUrl) {
+      pageUrl = result;
+      notify();
+    }
+  }
+  if (isFirefox) {
+    ext.devtools.inspectedWindow
+      .eval("location.href")
+      .then((res) => applyInitialPageUrl(Array.isArray(res) ? res[0] : res))
+      .catch((err) => console.error("[NovaDebug] 초기 URL 조회 실패", err));
+  } else {
+    ext.devtools.inspectedWindow.eval("location.href", applyInitialPageUrl);
+  }
 })();

@@ -145,7 +145,7 @@
       });
   }
 
-  // storage 변경만으로는 background 가 아직 이 탭을 activeTabIds 에 등록하지 않았으면
+  // storage 변경만으로는 background 가 아직 이 탭을 activeTabs 에 등록하지 않았으면
   // (DevTools 를 안 열어본 탭) 규칙이 반영되지 않으므로, 현재 탭에는 직접 알려 즉시 적용한다.
   function notifyBackgroundToggle(enabled) {
     if (typeof tabId !== "number") return;

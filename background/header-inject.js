@@ -58,20 +58,34 @@
   }
 
   // 활성 tab 추적 — DNR/webRequest 경로 공통. storage 변경 시 이 tabId 들의 rule/캐시를 재구성한다.
-  const activeTabIds = new Set();
+  // capture=false: DevTools 오픈(REGISTER) 단계 — captureOnOpen 호스트에만 주입
+  // capture=true : 패널 첫 표시(PANEL_SHOWN) 또는 popup 명시 토글 — enabled 호스트 전부 주입
+  const activeTabs = new Map(); // tabId -> { capture }
+
+  function tabCaptures(tabId) {
+    const state = activeTabs.get(tabId);
+    return !!(state && state.capture);
+  }
+
+  // 탭에서 헤더를 주입할 호스트인지 — enabled 이면서, 탭이 캡쳐 승격됐거나 호스트가
+  // DevTools 오픈 즉시 캡쳐(captureOnOpen)로 설정된 경우.
+  function hostInjectable(entry, capture) {
+    return !!(entry && entry.enabled && (capture || entry.captureOnOpen));
+  }
 
   async function enableViaDnr(tabId) {
     const [hostConfig, existingRules] = await Promise.all([
       loadHostConfig(),
       ext.declarativeNetRequest.getSessionRules(),
     ]);
+    const capture = tabCaptures(tabId);
 
     // 토큰 값이 같은 host끼리 그룹화해 그룹당 rule 1개만 생성 (대부분 전역 토큰 하나뿐이라
     // 사실상 기존처럼 탭당 rule 1개로 유지된다).
     const groups = new Map(); // token -> hostnames[]
     Object.keys(hostConfig.hostMap).forEach((host) => {
       const entry = hostConfig.hostMap[host];
-      if (!entry || !entry.enabled) return;
+      if (!hostInjectable(entry, capture)) return;
       const token = tokenForHost(host, hostConfig);
       if (!groups.has(token)) groups.set(token, []);
       groups.get(token).push(host);
@@ -138,7 +152,7 @@
   }
 
   function onBeforeSendHeaders(details) {
-    if (!activeTabIds.has(details.tabId)) return {};
+    if (!activeTabs.has(details.tabId)) return {};
     let host;
     try {
       host = new URL(details.url).hostname;
@@ -146,7 +160,7 @@
       return {};
     }
     const entry = hostConfigCache.hostMap[host];
-    if (!entry || !entry.enabled) return {};
+    if (!hostInjectable(entry, tabCaptures(details.tabId))) return {};
     const token = tokenForHost(host, hostConfigCache);
     const headers = details.requestHeaders || [];
     const existing = headers.find((h) => h.name && h.name.toLowerCase() === REQUEST_HEADER_LC);
@@ -168,8 +182,15 @@
     );
   }
 
-  async function enable(tabId) {
-    activeTabIds.add(tabId);
+  // opts.capture: true=승격 / false=명시 리셋 / undefined=기존 상태 유지.
+  // REGISTER 는 false 리셋을 쓴다 — Firefox 에서 DevTools 닫힘의 onDisconnect 가 누락되면
+  // 이전 세션의 승격(capture=true)이 event page 메모리에 남아, 재오픈 시 체크박스와 무관하게
+  // 전체 주입되는 문제가 있었다. 재시작/재연결 시 패널이 이미 표시된 상태였다면 devtools.js 가
+  // PANEL_SHOWN 을 재전송하므로 리셋해도 승격이 곧바로 복원된다.
+  async function enable(tabId, opts) {
+    const prev = tabCaptures(tabId);
+    const capture = (opts && typeof opts.capture === "boolean") ? opts.capture : prev;
+    activeTabs.set(tabId, { capture });
     if (hasDeclarativeNetRequest()) {
       await enableViaDnr(tabId);
     } else {
@@ -179,7 +200,7 @@
   }
 
   async function disable(tabId) {
-    activeTabIds.delete(tabId);
+    activeTabs.delete(tabId);
     if (hasDeclarativeNetRequest()) {
       await disableViaDnr(tabId);
     }
@@ -192,7 +213,7 @@
       const relevant = changes[STORAGE_KEYS.HOST_MAP] || changes[STORAGE_KEYS.TOKEN];
       if (!relevant) return;
       if (hasDeclarativeNetRequest()) {
-        activeTabIds.forEach((tabId) => {
+        activeTabs.forEach((state, tabId) => {
           enableViaDnr(tabId).catch((err) =>
             console.error("[NovaDebug] 호스트/토큰 변경 반영 실패", err)
           );

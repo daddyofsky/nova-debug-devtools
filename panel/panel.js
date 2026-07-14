@@ -11,6 +11,9 @@
   const clearBtn = document.getElementById("btn-clear");
   const openOptionsBtn = document.getElementById("btn-open-options");
   const preserveChk = document.getElementById("chk-preserve");
+  const captureOpenChk = document.getElementById("chk-capture-open");
+  const captureOpenLabel = document.getElementById("capture-open-label");
+  const captureNoticeEl = document.getElementById("capture-notice");
   const filterInputEl = document.getElementById("filter-input");
   const showTimeChk = document.getElementById("chk-show-time");
   const tabBarEl = document.getElementById("tab-bar");
@@ -96,6 +99,7 @@
       if (area !== "sync" && area !== "local") return;
       if (changes[NovaDebugProtocol.STORAGE_KEYS.HOST_MAP]) {
         hostMap = changes[NovaDebugProtocol.STORAGE_KEYS.HOST_MAP].newValue || {};
+        refreshCaptureControl();
         if (selectedEntry) renderDetail(selectedEntry);
       }
       if (changes.theme) {
@@ -122,6 +126,83 @@
     const host = NovaDebugProtocol.extractHostname(url);
     return (host && hostMap[host]) || {};
   }
+
+  // ------------------------------------------------------------
+  // 사이트별 "DevTools 오픈 시 캡쳐"(hostMap[host].captureOnOpen) 체크박스
+  // 기본은 패널(Nova Debug 탭) 첫 표시부터 캡쳐 — 체크하면 DevTools 오픈 즉시 캡쳐.
+  // DevTools 를 프로그램으로 재시작할 방법이 없어 변경은 다음 오픈부터 적용 → 안내 필수.
+  // ------------------------------------------------------------
+
+  let captureHost = null;
+  let captureNoticeTimer = null;
+  let captureNoticeSticky = false; // 토글 직후 안내가 hover 이탈로 지워지지 않도록
+
+  function captureModeText() {
+    return captureOpenChk.checked
+      ? "DevTools가 열려 있는 동안 항상 캡쳐합니다"
+      : "캡쳐는 Nova Debug 탭이 표시된 동안 수행됩니다 — 페이지를 리로드하세요";
+  }
+
+  function showCaptureNotice(text) {
+    captureNoticeSticky = true;
+    captureNoticeEl.textContent = text;
+    if (captureNoticeTimer) clearTimeout(captureNoticeTimer);
+    captureNoticeTimer = setTimeout(() => {
+      captureNoticeSticky = false;
+      captureNoticeEl.textContent = "";
+    }, 6000);
+  }
+
+  captureOpenLabel.addEventListener("mouseenter", () => {
+    if (captureNoticeSticky || captureOpenChk.disabled) return;
+    captureNoticeEl.textContent = captureModeText();
+  });
+  captureOpenLabel.addEventListener("mouseleave", () => {
+    if (captureNoticeSticky) return;
+    captureNoticeEl.textContent = "";
+  });
+
+  function refreshCaptureControl() {
+    const url = shared && typeof shared.getPageUrl === "function" ? shared.getPageUrl() : "";
+    captureHost = NovaDebugProtocol.extractHostname(url);
+    const entry = (captureHost && hostMap[captureHost]) || null;
+    const usable = !!(entry && entry.enabled);
+    captureOpenChk.disabled = !usable;
+    captureOpenChk.checked = !!(entry && entry.captureOnOpen);
+    captureOpenLabel.classList.toggle("disabled", !usable);
+    captureOpenLabel.title = usable
+      ? "현재 사이트: " + captureHost
+      : "현재 사이트" + (captureHost ? "(" + captureHost + ")" : "") +
+        "가 허용 호스트가 아닙니다 — 팝업 또는 전체설정에서 먼저 활성화하세요.";
+  }
+
+  captureOpenChk.addEventListener("change", () => {
+    const host = captureHost;
+    const checked = captureOpenChk.checked;
+    if (!host) return;
+    // 저장 직전에 최신 hostMap 을 다시 읽어 다른 필드(옵션 페이지 편집분)를 덮어쓰지 않는다.
+    NovaDebugProtocol.loadHostMap(storageArea())
+      .then((map) => {
+        const entry = map[host];
+        if (!entry || !entry.enabled) {
+          refreshCaptureControl();
+          return;
+        }
+        entry.captureOnOpen = checked;
+        // 안내는 저장 성공 체인 안에서 — set() 의 resolve 값은 브라우저마다 달라
+        // (Chrome undefined / Firefox null) 바깥 then 에서 값으로 분기하면 안 된다.
+        return storageArea()
+          .set({ [NovaDebugProtocol.STORAGE_KEYS.HOST_MAP]: map })
+          .then(() => {
+            showCaptureNotice(captureModeText() + " (다음 DevTools 오픈부터 적용)");
+          });
+      })
+      .catch((err) => {
+        console.error("[NovaDebug] captureOnOpen 저장 실패", err);
+        showCaptureNotice("저장 실패: " + (err.message || err));
+        refreshCaptureControl();
+      });
+  });
 
   // ------------------------------------------------------------
   // 목록 (요청 통계 뱃지 포함)
@@ -421,11 +502,13 @@
       if (selectedEntry && entries.indexOf(selectedEntry) === -1) {
         selectedEntry = null;
       }
+      refreshCaptureControl();
       renderList();
       renderDetail(selectedEntry);
     });
 
     setStatus(shared.getStatus());
+    refreshCaptureControl();
     renderList();
     renderDetail(selectedEntry);
   };
@@ -542,7 +625,7 @@
 
   renderList();
   renderDetail(null);
-  loadHostMap();
+  loadHostMap().then(refreshCaptureControl);
   loadTheme();
   loadShowTime();
 })();

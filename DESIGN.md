@@ -46,6 +46,34 @@
 - 새 코드 경로는 요청 헤더가 있을 때만 활성 → 기존 프로젝트 무영향
 - 프로젝트별 설정 선택 불필요, 요청 단위 자동 결정
 
+### 디버그 활성화 게이트 — 헤더가 debug on 트리거 (2026-07-14)
+
+요청 헤더는 출력 모드 협상뿐 아니라 **디버그 수집 자체의 활성화 트리거**를 겸한다.
+nova_builder `App::initInstantDebugging()`(DEVELOPER IP 게이트 내부) 기준:
+
+```php
+$debug = $_REQUEST['debug'] ?? false;
+if (!$debug) {
+	if (isset($_SERVER['HTTP_X_NOVA_DEBUG']) && Debug::isExtensionMode()) {
+		static::setConf('app.debug', true);
+	}
+	return;
+}
+// 이하 debug=on/off 영속 쿠키 분기 — $_REQUEST['debug'] 경로 전용
+```
+
+- **판별 순서**: `?debug=` 요청값 → 확장 헤더. `XDEBUG_SESSION` 쿠키 체크는 제거 —
+  쿠키 세팅이 번거롭던 시절의 우회 수단이었을 뿐, 확장 헤더가 그 역할을 정확히 대체한다
+- **`isset($_SERVER[...])` 선체크 후 Debug 로드**: `Debug::isExtensionMode()`를 게이트에
+  직접 쓰면 모든 요청에서 Debug 부트스트랩(configure+initExt)이 로드된다. 헤더명 하드코딩을
+  감수하고 원시 배열 접근으로 먼저 거른 뒤, 헤더가 있을 때만 Debug를 로드해 토큰·IP 검증을 태운다
+- **`debug=on`/`off` 영속 쿠키 분기는 `$_REQUEST['debug']` 경로 전용**: 헤더 사용 = 확장 사용
+  의미이고 확장이 수명을 관리(DevTools 닫으면 주입 해제)하므로 쿠키가 낄 자리가 없다
+- **확장의 쿠키 주입안(XDEBUG_SESSION 등을 DNR로 append) 불채택**: 서버가 헤더를 직접 보면
+  불필요. 실제 Xdebug(IDE 디버거) trigger 충돌 우려도 원천 소멸
+- 과도기: 게이트 미반영 서버(타 프로젝트 Nova 복사본)에서는 헤더만으로 debug가 켜지지 않으므로
+  `?debug=` 파라미터로 사용
+
 ---
 
 ## 2. 프로토콜
@@ -279,9 +307,13 @@ debug/
 ### 4.4 패널 라이프사이클 & 메시지 흐름
 
 ```
-panel open
-  → port = runtime.connect({name:'nova-debug'})  + {tabId: devtools.inspectedWindow.tabId}
-  → background: enable(tabId)
+devtools open (devtools_page 로드)
+  → port = runtime.connect({name:'nova-debug'})  + REGISTER {tabId: devtools.inspectedWindow.tabId}
+  → background: enable(tabId, {capture:false}) — captureOnOpen 호스트만 헤더 주입
+Nova Debug 패널 탭 표시 (panel.onShown)
+  → PANEL_SHOWN → background: enable(tabId, {capture:true}) — enabled 호스트 전부 주입
+다른 도구 탭으로 이동 (panel.onHidden)
+  → PANEL_HIDDEN → background: enable(tabId, {capture:false}) — 오픈 단계로 복귀
 panel: devtools.network.onRequestFinished(req)
   → req.response.headers 에서 X-Nova-Debug-Id 탐색 (응답 헤더 협상은 이 1개로 통일)
   → 조회 URL = effectiveFetchPath(요청 origin) + ?fetch={id}  (확장 자체 설정으로 구성, §2.2)
@@ -293,6 +325,19 @@ panel close / port disconnect
 ```
 
 - 페이지 내비게이션 시: 목록 유지(누적) + "Preserve log" 토글 (Network 탭과 동일 UX)
+- **캡쳐 트리거 (2026-07-14, 표시-연동으로 확정 2026-07-15)**: 기본은 **패널 탭이 표시된 동안만**
+  캡쳐(의도 표시 전/이탈 후 서버 수집 오버헤드 없음 — 서버 게이트가 헤더 유무로 debug on 을
+  결정하게 된 §1 변경의 후속). 처음엔 첫 표시 후 DevTools 닫힘까지 유지(sticky)로 구현했으나
+  실사용에서 "다른 도구 탭으로 이동해도 계속 캡쳐"가 문제로 확인되어 onHidden 해제로 변경.
+  호스트별 `hostMap[host].captureOnOpen`(옵션 테이블 "오픈 캡쳐" 컬럼 + 패널 툴바 "Capture on
+  open" 체크박스, 단일 소스는 hostMap)를 켜면 DevTools 가 열려 있는 동안 항상 주입. DevTools 를
+  프로그램으로 재시작할 API 가 없어 변경은 다음 오픈부터 적용 — 패널 체크박스 토글 시 안내 문구
+  표시. popup 사이트 토글 ON 은 즉시 승격(capture:true). 전역 설정은 두지 않음(사이트별로 충분).
+- **Firefox onDisconnect 누락 대응 (2026-07-15)**: DevTools 닫힘의 port.onDisconnect 가 Firefox
+  에서 누락되면 event page(SW 보다 오래 생존) 메모리에 이전 세션의 캡쳐 승격이 남아 재오픈 시
+  체크박스와 무관하게 전체 주입되는 버그 — ① REGISTER 가 capture:false 로 명시 리셋(패널이 이미
+  표시된 상태의 재시작·재연결은 devtools.js 가 PANEL_SHOWN 재전송으로 복원), ② background 가
+  heartbeat(PING 15s)를 생존 신호로 삼는 스윕(45s 무신호 → disable)으로 잔존 주입을 정리.
 
 ### 4.5 패널 UI
 
@@ -386,6 +431,13 @@ panel close / port disconnect
 1. **IDE 설정**: 서버는 meta 에 `ide.serverPath` 만 전달 (선택적, 불필요 판명 시 제거 가능). `localPath`/`project`/`protocol` 은 확장 옵션의 도메인별 매핑으로 설정
 2. **백필**: 패널 열기 전 요청은 기존 jsonl 로그 뷰어로 커버 (확장에서 별도 백필 없음)
 3. **배포**: 수동 설치(zip/xpi) 기준. 스토어 배포는 효용성 검증 + JSON 스키마 표준화(§9) 이후 재검토
+4. **디버그 활성화 = 헤더 유무 (2026-07-14)**: 서버 게이트가 `?debug=` 요청값 → 확장 헤더 순으로
+   판별, `XDEBUG_SESSION` 쿠키 체크 제거. 확장의 쿠키 주입안 불채택. 상세는 §1 활성화 게이트 참조
+   — nova_builder App.php 반영 완료, 타 프로젝트 Nova 복사본은 전파 필요
+5. **debug.js 인페이지 폴백 유지 (2026-07-14)**: 코드 삭제하지 않고 동결 유지 — 모바일 실기기·
+   확장 불가 브라우저에서 유일한 경로이고, `DebugRenderer::error()/redirect()` 인페이지 렌더링은
+   어차피 남아 삭제 실익이 작다. 확장 정착 후 프로젝트별 `ext.only=true`로 행동만 끄고,
+   한동안 아쉬움 없으면 그때 삭제 재검토
 
 ---
 

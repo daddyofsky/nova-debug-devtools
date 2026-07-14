@@ -6,7 +6,7 @@
  *          이 파일보다 먼저 로드하므로 importScripts 는 건너뛴다 (service worker 전용 함수)
  */
 if (typeof importScripts === "function") {
-  importScripts("../lib/protocol.js", "./header-inject.js");
+  importScripts("../lib/protocol.js", "./header-inject.js", "./icon-state.js");
 }
 
 (function (root) {
@@ -14,7 +14,13 @@ if (typeof importScripts === "function") {
   const PORT_NAME = root.NovaDebugProtocol.PORT_NAME;
   const MSG = root.NovaDebugProtocol.MSG;
   const REQUEST_HEADER = root.NovaDebugProtocol.REQUEST_HEADER;
+  const STORAGE_KEYS = root.NovaDebugProtocol.STORAGE_KEYS;
+  const loadHostMap = root.NovaDebugProtocol.loadHostMap;
   const HeaderInject = root.NovaHeaderInject;
+
+  function storageArea() {
+    return ext.storage.sync || ext.storage.local;
+  }
 
   // headerValue: 조회 대상 origin 의 유효 토큰(effectiveToken) — devtools.js 가 계산해 넘긴다.
   // 서버가 fetch 액션도 IP AND ext.tokens(설정 시) 이중 게이트로 검사하므로 협상 헤더와
@@ -57,11 +63,14 @@ if (typeof importScripts === "function") {
   ext.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (!msg) return;
 
-    // popup 의 사이트 on/off 는 DevTools 로 등록된 탭(activeTabIds)에만 반영되는
+    // popup 의 사이트 on/off 는 DevTools 로 등록된 탭(activeTabs)에만 반영되는
     // storage.onChanged 경로를 안 타므로, 등록 여부와 무관하게 현재 탭에 바로 적용되도록
     // popup 이 직접 이 메시지를 보낸다.
     if (msg.type === MSG.SITE_TOGGLED) {
-      const action = msg.enabled ? HeaderInject.enable(msg.tabId) : HeaderInject.disable(msg.tabId);
+      // popup 토글은 DevTools 없이 켜는 명시적 의사 표시 — captureOnOpen 설정과 무관하게 바로 캡쳐
+      const action = msg.enabled
+        ? HeaderInject.enable(msg.tabId, { capture: true })
+        : HeaderInject.disable(msg.tabId);
       action
         .then(() => sendResponse({ ok: true }))
         .catch((err) => {
@@ -110,6 +119,25 @@ if (typeof importScripts === "function") {
   // 포트로 릴레이하는 데 쓴다(탭당 devtools 포트는 하나).
   const registeredPorts = new Map();
 
+  // Firefox 는 DevTools 닫힘의 port.onDisconnect 가 누락될 수 있고(event page 는 SW 와 달리
+  // 오래 살아 stale 상태가 유지됨), 그 사이 헤더 주입이 계속된다. devtools.js 의 heartbeat
+  // (15s 간격 PING)를 생존 신호로 삼아, 오래 끊긴 탭을 스윕에서 강제 정리한다.
+  const HEARTBEAT_STALE_MS = 45000; // heartbeat 3회분
+  const tabLastSeen = new Map(); // tabId → Date.now()
+
+  setInterval(() => {
+    const now = Date.now();
+    tabLastSeen.forEach((seen, tabId) => {
+      if (now - seen <= HEARTBEAT_STALE_MS) return;
+      tabLastSeen.delete(tabId);
+      if (!registeredPorts.has(tabId)) return;
+      registeredPorts.delete(tabId);
+      HeaderInject.disable(tabId).catch((err) =>
+        console.error("[NovaDebug] stale devtools 탭 정리 실패", err)
+      );
+    });
+  }, 30000);
+
   ext.runtime.onConnect.addListener((port) => {
     if (port.name !== PORT_NAME) return;
 
@@ -121,8 +149,32 @@ if (typeof importScripts === "function") {
       if (msg.type === MSG.REGISTER) {
         tabId = msg.tabId;
         registeredPorts.set(tabId, port);
-        HeaderInject.enable(tabId).catch((err) =>
+        tabLastSeen.set(tabId, Date.now());
+        // DevTools 오픈 단계 — captureOnOpen 호스트에만 주입되고, 나머지 enabled 호스트는
+        // PANEL_SHOWN(패널 첫 표시) 승격 후부터 주입된다. capture:false 명시 리셋은
+        // onDisconnect 누락으로 남은 이전 세션의 승격을 지우기 위함(header-inject.js 참조).
+        HeaderInject.enable(tabId, { capture: false }).catch((err) =>
           console.error("[NovaDebug] header inject enable 실패", err)
+        );
+        return;
+      }
+
+      if (msg.type === MSG.PANEL_SHOWN) {
+        if (tabId === null) return;
+        tabLastSeen.set(tabId, Date.now());
+        HeaderInject.enable(tabId, { capture: true }).catch((err) =>
+          console.error("[NovaDebug] 패널 표시 캡쳐 승격 실패", err)
+        );
+        return;
+      }
+
+      // 캡쳐는 패널이 표시된 동안만 — 다른 도구 탭으로 이동하면 오픈 단계(captureOnOpen
+      // 호스트만 주입)로 되돌린다.
+      if (msg.type === MSG.PANEL_HIDDEN) {
+        if (tabId === null) return;
+        tabLastSeen.set(tabId, Date.now());
+        HeaderInject.enable(tabId, { capture: false }).catch((err) =>
+          console.error("[NovaDebug] 패널 숨김 캡쳐 해제 실패", err)
         );
         return;
       }
@@ -130,6 +182,7 @@ if (typeof importScripts === "function") {
       // devtools.js 의 heartbeat — 응답만으로 이 이벤트가 idle 타이머를 리셋시키고,
       // devtools 쪽은 응답 유무로 port 가 살아있는 background 에 실제로 닿아있는지 확인한다.
       if (msg.type === MSG.PING) {
+        if (tabId !== null) tabLastSeen.set(tabId, Date.now());
         try {
           port.postMessage({ type: MSG.PONG });
         } catch (err) {
@@ -143,7 +196,10 @@ if (typeof importScripts === "function") {
       if (tabId === null) return;
       // 재연결 레이스로 이미 새 port 가 같은 tabId 로 등록돼 있을 수 있어, 이 port 가 여전히
       // 현재 등록된 port 일 때만 제거한다.
-      if (registeredPorts.get(tabId) === port) registeredPorts.delete(tabId);
+      if (registeredPorts.get(tabId) === port) {
+        registeredPorts.delete(tabId);
+        tabLastSeen.delete(tabId);
+      }
       HeaderInject.disable(tabId).catch((err) =>
         console.error("[NovaDebug] header inject disable 실패", err)
       );
@@ -165,6 +221,57 @@ if (typeof importScripts === "function") {
       } catch (err) {
         console.error("[NovaDebug] NAV_COMMITTED 릴레이 실패", err);
       }
+    });
+  }
+
+  // 단축키(commands.toggle-site) — 현재 사이트의 hostMap[host].enabled 토글.
+  // popup 의 사이트 스위치와 동일한 의미(저장 + 현재 탭 즉시 반영). 아이콘 상태는
+  // icon-state.js 의 storage.onChanged 경로가 자동 갱신한다.
+  function toggleSiteForTab(tab) {
+    if (!tab || typeof tab.id !== "number") return;
+    let host = null;
+    try {
+      const u = new URL(tab.url || "");
+      if (/^https?:$/.test(u.protocol)) host = u.hostname;
+    } catch {
+      // http(s) 페이지가 아니면 무시
+    }
+    if (!host) return;
+
+    loadHostMap(storageArea())
+      .then((hostMap) => {
+        const nextOn = !(hostMap[host] && hostMap[host].enabled);
+        hostMap[host] = { ...(hostMap[host] || {}), enabled: nextOn };
+        return storageArea()
+          .set({ [STORAGE_KEYS.HOST_MAP]: hostMap })
+          .then(() => {
+            // Firefox MV3 host permission opt-in — 단축키도 user input 으로 인정되므로
+            // 시도하되, 실패는 조용히 무시(popup 경로와 동일한 best-effort).
+            if (nextOn && ext.permissions && typeof ext.permissions.request === "function") {
+              ext.permissions.request({ origins: ["*://" + host + "/*"] }).catch(() => {});
+            }
+            return nextOn
+              ? HeaderInject.enable(tab.id, { capture: true })
+              : HeaderInject.disable(tab.id);
+          });
+      })
+      .catch((err) => {
+        console.error("[NovaDebug] 단축키 사이트 토글 실패", err);
+      });
+  }
+
+  if (ext.commands && ext.commands.onCommand) {
+    ext.commands.onCommand.addListener((command, tab) => {
+      if (command !== "toggle-site") return;
+      // Chrome 은 두 번째 인자로 tab 을 주지만 Firefox 구버전은 없을 수 있어 폴백 조회
+      if (tab && typeof tab.id === "number") {
+        toggleSiteForTab(tab);
+        return;
+      }
+      ext.tabs
+        .query({ active: true, currentWindow: true })
+        .then((tabs) => toggleSiteForTab(tabs && tabs[0]))
+        .catch((err) => console.error("[NovaDebug] 단축키 활성 탭 조회 실패", err));
     });
   }
 

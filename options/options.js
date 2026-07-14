@@ -38,6 +38,13 @@
     enabledInput.checked = !!config.enabled;
     enabledTd.appendChild(enabledInput);
 
+    const captureOnOpenTd = document.createElement("td");
+    const captureOnOpenInput = document.createElement("input");
+    captureOnOpenInput.type = "checkbox";
+    captureOnOpenInput.className = "f-capture-open";
+    captureOnOpenInput.checked = !!config.captureOnOpen;
+    captureOnOpenTd.appendChild(captureOnOpenInput);
+
     const hostTd = document.createElement("td");
     const hostInput = document.createElement("input");
     hostInput.type = "text";
@@ -140,6 +147,7 @@
     removeTd.appendChild(removeBtn);
 
     tr.appendChild(enabledTd);
+    tr.appendChild(captureOnOpenTd);
     tr.appendChild(hostTd);
     tr.appendChild(protoTd);
     tr.appendChild(pathTd);
@@ -198,6 +206,7 @@
           : protoValue;
       hostMap[host] = {
         enabled: tr.querySelector(".f-enabled").checked,
+        captureOnOpen: tr.querySelector(".f-capture-open").checked,
         protocol,
         localPath: tr.querySelector(".f-localpath").value.trim(),
         project: tr.querySelector(".f-project").value.trim(),
@@ -307,6 +316,130 @@
     chromePolicyCmdEl.textContent = buildChromePolicyCommand(hosts, protocols);
     windowsPolicyCmdEl.textContent = buildWindowsPolicyCommand(hosts, protocols);
   }
+
+  // ------------------------------------------------------------
+  // 단축키 (commands.toggle-site)
+  // Firefox: commands.update/reset 으로 옵션 페이지에서 직접 변경.
+  // Chrome: 확장 API 로 변경 불가 — chrome://extensions/shortcuts 열기 버튼만 제공.
+  // ------------------------------------------------------------
+
+  const shortcutSectionEls = [
+    document.getElementById("shortcut-options"),
+    document.getElementById("shortcut-options").previousElementSibling, // hint
+    document.getElementById("shortcut-options").previousElementSibling.previousElementSibling, // h1
+  ];
+  const shortcutCurrentEl = document.getElementById("shortcut-current");
+  const shortcutFirefoxEl = document.getElementById("shortcut-firefox-controls");
+  const shortcutInputEl = document.getElementById("shortcut-input");
+  const applyShortcutBtn = document.getElementById("btn-apply-shortcut");
+  const resetShortcutBtn = document.getElementById("btn-reset-shortcut");
+  const openShortcutsBtn = document.getElementById("btn-open-shortcuts");
+  const shortcutStatusEl = document.getElementById("shortcut-status");
+  const shortcutHintEl = document.getElementById("shortcut-hint");
+  const TOGGLE_COMMAND = "toggle-site";
+  const isMac = /Mac/.test(navigator.platform);
+
+  function setShortcutStatus(text) {
+    shortcutStatusEl.textContent = text;
+    setTimeout(() => { shortcutStatusEl.textContent = ""; }, 3000);
+  }
+
+  function refreshCurrentShortcut() {
+    return ext.commands.getAll().then((cmds) => {
+      const cmd = cmds.find((c) => c.name === TOGGLE_COMMAND);
+      shortcutCurrentEl.value = (cmd && cmd.shortcut) || "(설정 안 됨)";
+    });
+  }
+
+  // keydown 이벤트 → manifest 형식("Command+F12" 등) 조합 문자열. 미완성 조합이면 null.
+  function shortcutFromEvent(e) {
+    const mods = [];
+    if (e.metaKey) mods.push("Command");
+    if (e.ctrlKey) mods.push(isMac ? "MacCtrl" : "Ctrl");
+    if (e.altKey) mods.push("Alt");
+    if (e.shiftKey) mods.push("Shift");
+
+    let key = null;
+    if (/^F([1-9]|1[0-2])$/.test(e.key)) key = e.key;
+    else if (/^[a-z]$/i.test(e.key)) key = e.key.toUpperCase();
+    else if (/^[0-9]$/.test(e.key)) key = e.key;
+    else {
+      const named = {
+        ",": "Comma", ".": "Period", " ": "Space",
+        Home: "Home", End: "End", PageUp: "PageUp", PageDown: "PageDown",
+        Insert: "Insert", Delete: "Delete",
+        ArrowUp: "Up", ArrowDown: "Down", ArrowLeft: "Left", ArrowRight: "Right",
+      };
+      key = named[e.key] || null;
+    }
+    if (!key) return null;
+
+    // F키는 단독 허용, 그 외에는 Shift 외 modifier 1개 이상 필요 (Firefox 규칙)
+    const hasRealMod = mods.some((m) => m !== "Shift");
+    if (!/^F/.test(key) && !hasRealMod) return null;
+    return mods.concat(key).join("+");
+  }
+
+  function initShortcutSection() {
+    if (!ext.commands || typeof ext.commands.getAll !== "function") {
+      shortcutSectionEls.forEach((el) => el && el.classList.add("hidden"));
+      return;
+    }
+    refreshCurrentShortcut().catch((err) => {
+      console.error("[NovaDebug] 단축키 조회 실패", err);
+    });
+
+    if (typeof ext.commands.update === "function") {
+      shortcutFirefoxEl.classList.remove("hidden");
+      shortcutHintEl.textContent =
+        "입력칸을 클릭한 뒤 원하는 키 조합을 누르고 적용을 누르세요. F키는 단독 사용 가능, 그 외에는 Ctrl/Alt/Command 조합이 필요합니다.";
+
+      shortcutInputEl.addEventListener("keydown", (e) => {
+        e.preventDefault();
+        const combo = shortcutFromEvent(e);
+        if (combo) shortcutInputEl.value = combo;
+      });
+
+      applyShortcutBtn.addEventListener("click", () => {
+        const shortcut = shortcutInputEl.value.trim();
+        if (!shortcut) return;
+        ext.commands
+          .update({ name: TOGGLE_COMMAND, shortcut })
+          .then(() => refreshCurrentShortcut())
+          .then(() => {
+            shortcutInputEl.value = "";
+            setShortcutStatus("변경되었습니다");
+          })
+          .catch((err) => {
+            console.error("[NovaDebug] 단축키 변경 실패", err);
+            setShortcutStatus("변경 실패: " + (err.message || err));
+          });
+      });
+
+      resetShortcutBtn.addEventListener("click", () => {
+        ext.commands
+          .reset(TOGGLE_COMMAND)
+          .then(() => refreshCurrentShortcut())
+          .then(() => setShortcutStatus("기본값으로 복원되었습니다"))
+          .catch((err) => {
+            console.error("[NovaDebug] 단축키 복원 실패", err);
+            setShortcutStatus("복원 실패: " + (err.message || err));
+          });
+      });
+    } else {
+      // Chrome — 브라우저 설정 페이지로 안내
+      openShortcutsBtn.classList.remove("hidden");
+      shortcutHintEl.textContent =
+        "Chrome은 확장에서 단축키를 직접 변경할 수 없습니다. 아래 버튼으로 브라우저 단축키 설정을 열어 변경하세요 (F키는 Chrome에서 지원되지 않습니다).";
+      openShortcutsBtn.addEventListener("click", () => {
+        ext.tabs.create({ url: "chrome://extensions/shortcuts" }).catch((err) => {
+          console.error("[NovaDebug] 단축키 설정 페이지 열기 실패", err);
+          setShortcutStatus("열기 실패 — 주소창에 chrome://extensions/shortcuts 입력");
+        });
+      });
+    }
+  }
+  initShortcutSection();
 
   addBtn.addEventListener("click", () => addRow("", {}));
 
