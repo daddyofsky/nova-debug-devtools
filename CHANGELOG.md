@@ -2,6 +2,20 @@
 
 이 문서는 Nova Debug DevTools 확장의 릴리즈 이력을 기록한다.
 
+## [1.0.3] - 2026-07-17
+
+### Queries 탭
+
+- 기본 뷰를 순서기준 → 테이블별로 변경 (뷰 토글 버튼 순서도 테이블별 우선으로 정렬)
+
+### Firefox
+
+- manifest에 `data_collection_permissions` 선언 추가 — 데이터 수집 없음(`none`) 명시 (Firefox 부가 기능 배포 요구사항)
+
+### 문서
+
+- README 언어 중립화 — 특정 프레임워크 종속 표현을 제거하고 페이로드 스키마 v1 준수만으로 어떤 백엔드에서도 사용 가능함을 명시. PHP 레퍼런스 구현 [nova-debug-php](https://github.com/daddyofsky/nova-debug-php)의 Packagist 설치(`composer require daddyofsky/nova-debug`) 안내 추가
+
 ## [1.0.2] - 2026-07-15
 
 ### 캡쳐 트리거

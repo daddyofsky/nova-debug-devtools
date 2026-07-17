@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Nova Debug",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Nova Debug 서버 응답을 DevTools 패널에서 조회",
   "devtools_page": "devtools/devtools.html",
   "background": {

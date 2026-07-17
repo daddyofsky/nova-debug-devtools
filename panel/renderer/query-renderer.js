@@ -2,7 +2,7 @@
  * Nova Debug — Queries 탭 렌더러
  * SQL 전문/EXPLAIN 나열이 아니라 Files 탭처럼 간결한 쿼리 목록(index/시간/테이블/한줄 요약)을 보여준다.
  * EXPLAIN 표시는 하지 않는다(원본 EXPLAIN 표시는 Dumps 탭 행 내부에서 유지). 목록 클릭 시 Dumps 탭의 해당
- * 행으로 이동+선택(opts.onSelect). 상단 [순서기준 | 테이블별] 토글은 원본 debug.js By Table 뷰 로직 참고.
+ * 행으로 이동+선택(opts.onSelect). 상단 [테이블별 | 순서기준] 토글은 원본 debug.js By Table 뷰 로직 참고.
  */
 (function (root) {
   const NS = root.NovaDebugRenderer = root.NovaDebugRenderer || {};
@@ -117,14 +117,14 @@
 
     let html = '<div class="d-q-toolbar">';
     html += '<div class="d-q-view-toggle">' +
-      '<button type="button" class="d-q-view-btn active" data-view="order">순서기준</button>' +
-      '<button type="button" class="d-q-view-btn" data-view="table">테이블별</button>' +
+      '<button type="button" class="d-q-view-btn active" data-view="table">테이블별</button>' +
+      '<button type="button" class="d-q-view-btn" data-view="order">순서기준</button>' +
       '</div>';
     html += '<div class="d-tab-search-wrap"><input type="text" class="d-tab-search" data-role="search" placeholder="SQL 검색" value="' + escHtml(searchText) + '"></div>';
     html += '</div>';
     html += buildStatsHtml(debugData);
-    html += '<div class="d-content d-q-view-order">' + buildOrderView(debugData, slowQueryThreshold) + '</div>';
-    html += '<div class="d-content d-q-view-table" style="display:none">' + buildTableView(debugData, slowQueryThreshold) + '</div>';
+    html += '<div class="d-content d-q-view-table">' + buildTableView(debugData, slowQueryThreshold) + '</div>';
+    html += '<div class="d-content d-q-view-order" style="display:none">' + buildOrderView(debugData, slowQueryThreshold) + '</div>';
     root.innerHTML = html;
     container.appendChild(root);
 
