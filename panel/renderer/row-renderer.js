@@ -17,6 +17,36 @@
     return badges;
   }
 
+  // EXPLAIN 렌더 — query.explain(정식 필드, 3-format) 우선, 없으면 explainHtml(deprecated) 폴백,
+  // 둘 다 없으면 기존 동작(공백 1개, "이 항목은 쿼리다" 신호 겸용 — SCHEMA.md §7)을 유지한다.
+  function buildExplainHtml(query) {
+    const explain = query && query.explain;
+    if (explain) {
+      if (explain.format === 'table') {
+        let html = '<table><thead><tr>';
+        (explain.columns || []).forEach((col) => { html += '<th>' + escHtml(String(col)) + '</th>'; });
+        html += '</tr></thead><tbody>';
+        (explain.rows || []).forEach((row) => {
+          html += '<tr>';
+          row.forEach((cell) => {
+            const text = (cell === null || cell === undefined) ? 'NULL' : String(cell);
+            html += '<td>' + escHtml(text) + '</td>';
+          });
+          html += '</tr>';
+        });
+        html += '</tbody></table>';
+        return html;
+      }
+      if (explain.format === 'text') {
+        return '<pre class="d-explain-text">' + escHtml(explain.text || '') + '</pre>';
+      }
+      if (explain.format === 'json') {
+        return '<pre class="d-explain-text">' + escHtml(JSON.stringify(explain.json, null, 2)) + '</pre>';
+      }
+    }
+    return (query && query.explainHtml) || ' ';
+  }
+
   // type=array/object 항목의 "종류 : 개수" 표시 문자열 — v1은 구조화 필드(array{depth,count}/object{className,count})로
   // 오므로 v0의 문자열 인코딩("array : 8" 등)을 여기서 재조립한다 (SCHEMA.md §5).
   function entryTypeLabel(item) {
@@ -153,6 +183,10 @@
         remark = (item.array.count >= threshold) ? 'd-remark' : '';
       }
       hasData = !!item.dump;
+    } else if (item.type !== 'dump') {
+      // 알려진 타입(dump/query/array) 외 generic 렌더 — log/exception 도 전용 렌더(E2) 전까지 이 경로를 탄다.
+      // 미지 서브객체(item.type 과 동일한 이름의 키, 예: cache{})는 SCHEMA.md §5 소비 규칙에 따라 무시한다.
+      text = '<span class="d-badge d-type-generic">' + escHtml(item.type) + '</span>' + escHtml(item.dump);
     } else {
       text = escHtml(item.dump);
     }
@@ -163,15 +197,17 @@
     const typeBtn = hasData
       ? '<button type="button" class="d-type-btn" data-deferred="1">' + escHtml(typeLabel) + '</button>'
       : (typeLabel ? '<button type="button" class="d-type-btn">' + escHtml(typeLabel) + '</button>' : '');
+    const truncatedBadge = item.truncated ? '<span class="d-badge d-truncated" title="dump가 생산자 측에서 truncate됨">TRUNCATED</span>' : '';
 
     return '<div class="d-row-summary ' + remark + '">' +
         '<b class="d-index">[' + item.index + ']</b>' +
         '<span class="d-label' + labelClass + '">' + escHtml(item.label) + '</span>' +
         typeBtn +
+        truncatedBadge +
         '<span class="d-row-text">' + text + '</span>' +
         '<button type="button" class="d-copy-btn" title="복사">📋</button>' +
       '</div>' +
-      (item.type === 'query' ? '<div class="d-query-info">' + ((item.query && item.query.explainHtml) || ' ') + '</div>' : '') +
+      (item.type === 'query' ? '<div class="d-query-info">' + buildExplainHtml(item.query) + '</div>' : '') +
       '<pre class="d-dump"></pre>' +
       '<div class="' + traceClass + '">' +
         '<button type="button" class="d-trace-toggle ' + singleTrace + '" data-deferred="1"></button>' +

@@ -2,6 +2,38 @@
 
 이 문서는 Nova Debug DevTools 확장의 릴리즈 이력을 기록한다.
 
+## [2.0.0] - 2026-07-17
+
+### 페이로드 스키마 v2 승격 (breaking)
+
+`meta.php` 제거가 breaking이라 스키마를 v2로 승격했다. 버전 정책 신설: **스키마 vN ↔ 확장 N.x.x** (v1=1.x.x, v2=2.x.x — SCHEMA.md §13). 확장은 v2 전용으로 동작하며 v1 페이로드는 "지원하지 않는 스키마 버전" 안내 + Raw 탭 확인으로 처리된다(v1 분기/폴백 없음). 서버 생산자(nova-debug-php)의 v2 전환 전까지는 구버전 서버와 조합 시 이 안내가 표시된다.
+
+- 런타임 중립화 — `meta.php` 제거 → `meta.runtime{name,version}` + 최상위 `x-php{opcache}` 벤더 확장
+- `entries[].type` 개방 구조 — enum(dump/query/array) → 소문자 패턴 문자열 + 알려진 타입별 if/then 검증. 미지 타입 소비 규칙(label+dump+trace generic 렌더)과 타입 등록 절차를 SCHEMA.md에 명문화
+- `query.explain` 원시 구조 추가 — `format: table|text|json` 3형식으로 모든 DB 엔진 실행계획 수용. `explainHtml`은 deprecated 병행 유지
+- 최상위 optional `request` 섹션 — method/status/contentType + GET/POST/쿠키/세션/요청·응답 헤더. 민감 키 마스킹(`"***"`)·truncate 규칙 명세
+- `log`/`exception` entry 타입 — PSR-3 8레벨 + 예외 체인(previous) 구조화, `summary.logs{count,byLevel}` 집계 추가
+- 검증 도구 신설: `test/validate-payload.py`(jsonschema draft 2020-12) + positive/negative 픽스처 세트, 스키마 파일명 `debug-payload.v2.schema.json`으로 변경
+
+### 패널 (v2 소비)
+
+- 헤더 요약을 `meta.runtime` 기반으로 교체 (php → "PHP 8.5.1" 표기 유지, 타 런타임은 name 그대로)
+- 미지 entry 타입 generic 렌더러 — 알려지지 않은 type은 label + dump + trace + 타입명 뱃지로 표시 (log/exception도 전용 렌더 전까지 이 경로)
+- EXPLAIN 렌더 3형식 — `query.explain`의 table(기존 테이블 스타일)/text(pre)/json(pre) 렌더, `explainHtml`과 공존 시 explain 우선
+- Files 탭 경로 하이라이트 복원 — `x-nova.fileHighlight`(경로 부분문자열 → 색상명) 소비, debug.js 와 동일한 10색 팔레트(라이트/다크). 링크 기본 스타일도 웹버전과 동일하게 조정(밑줄 제거, dim 색, hover 파랑)
+- Raw 탭 JSON 토글 아이콘 폭 축소 — 한 글자 폭(12px)만 차지하고 토글 없는 리프 라인도 같은 폭으로 들여써 동일 레벨 항목이 정렬되도록 수정
+- preview 하네스 `?fixture=` 픽스처 선택 지원 (test/fixtures/fixtures.js)
+
+### 옵션 페이지
+
+- 확장 이름/버전 헤더 표시 (manifest 기준) — 다크 테마에서는 흰색(invert) 아이콘으로 교체 표시
+- 섹션 카드형 레이아웃으로 재디자인 — 패널과 동일한 `--nd-*` 변수 팔레트 공유, 하단 고정 저장 바
+- 테마 설정을 옵션 페이지 자체에도 적용 (auto=OS 다크 모드, 라디오 선택 즉시 미리보기)
+
+### 빌드
+
+- 릴리즈 패키지에서 로컬 작업 문서(TODO.md·COMPARISON.md·PLAN-*.md) 제외 — 1.0.3 이하 zip/xpi에 포함되던 문제 수정
+
 ## [1.0.3] - 2026-07-17
 
 ### Queries 탭

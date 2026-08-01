@@ -267,7 +267,7 @@
   }
 
   function computeStats(data) {
-    if (!data || data.schemaVersion !== 1) {
+    if (!data || data.schemaVersion !== 2) {
       return { queryCount: 0, slowCount: 0, hasError: false, hasRedirect: false };
     }
     let hasError = false;

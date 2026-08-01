@@ -303,10 +303,10 @@
 
   function updateTabCounts(entry) {
     const data = entry && entry.data;
-    const isV1 = data && data.schemaVersion === 1;
-    setTabCount("dumps", isV1 ? data.entries.length : null);
-    setTabCount("queries", isV1 ? data.summary.queries.count : null);
-    setTabCount("files", isV1 ? data.summary.files.count : null);
+    const isV2 = data && data.schemaVersion === 2;
+    setTabCount("dumps", isV2 ? data.entries.length : null);
+    setTabCount("queries", isV2 ? data.summary.queries.count : null);
+    setTabCount("files", isV2 ? data.summary.files.count : null);
   }
 
   function clearTabPanels() {
@@ -334,7 +334,7 @@
 
   function renderActiveTab(entry) {
     const data = entry.data;
-    if (activeTab !== "raw" && data.schemaVersion !== 1) {
+    if (activeTab !== "raw" && data.schemaVersion !== 2) {
       tabPanels[activeTab].innerHTML = '<p class="d-empty-msg"></p>';
       tabPanels[activeTab].querySelector(".d-empty-msg").textContent =
         "지원하지 않는 스키마 버전(schemaVersion=" + data.schemaVersion + ") — Raw 탭에서 원본 데이터를 확인하세요.";
@@ -371,20 +371,36 @@
     }
   }
 
+  // x-nova.fileHighlight 색상명은 CSS 클래스로 쓰이므로 팔레트에 있는 이름만 허용한다
+  const FILE_HIGHLIGHT_COLORS = new Set([
+    "blue", "green", "orange", "red", "purple", "teal", "pink", "brown", "gray", "black",
+  ]);
+
   function renderFilesTab(container, data, ideConfig) {
     const escHtml = Renderer.escHtml;
+    const fileHighlight = (data["x-nova"] && data["x-nova"].fileHighlight) || null;
+    function pathHtml(path) {
+      if (fileHighlight) {
+        for (const match in fileHighlight) {
+          if (path.indexOf(match) !== -1 && FILE_HIGHLIGHT_COLORS.has(fileHighlight[match])) {
+            return '<span class="d-fh-' + fileHighlight[match] + '">' + escHtml(path) + "</span>";
+          }
+        }
+      }
+      return escHtml(path);
+    }
     let rowsHtml = "";
     (data.files || []).forEach((f, idx) => {
       const link = Renderer.IdeLink.build(f.path, 0, ideConfig);
       const open = link ? '<a href="' + escHtml(link) + '">' : "<span>";
       const close = link ? "</a>" : "</span>";
       const searchKey = ((f.path || "") + " " + (f.original || "")).toLowerCase();
-      rowsHtml += '<div data-search="' + escHtml(searchKey) + '"><b class="d-index">[' + idx + "]</b> " + open + escHtml(f.path) + close;
+      rowsHtml += '<div data-search="' + escHtml(searchKey) + '"><b class="d-index">[' + idx + "]</b> " + open + pathHtml(f.path) + close;
       if (f.original) {
         const origLink = Renderer.IdeLink.build(f.original, 0, ideConfig);
         const oopen = origLink ? '<a href="' + escHtml(origLink) + '">' : "<span>";
         const oclose = origLink ? "</a>" : "</span>";
-        rowsHtml += " &lt;- " + oopen + escHtml(f.original) + oclose;
+        rowsHtml += " &lt;- " + oopen + pathHtml(f.original) + oclose;
       }
       rowsHtml += "</div>";
     });
@@ -417,12 +433,15 @@
     return bytes >= 1048576 ? (bytes / 1048576).toFixed(2) + "MB" : (bytes / 1024).toFixed(0) + "KB";
   }
 
-  // 디테일 헤더 우측 컴팩트 요약 — meta.php.version / summary.time.total / summary.memory.usage 사용
+  // 디테일 헤더 우측 컴팩트 요약 — meta.runtime / summary.time.total / summary.memory.usage 사용
   function buildHeaderSummary(data) {
-    if (!data || data.schemaVersion !== 1) return "";
+    if (!data || data.schemaVersion !== 2) return "";
     const parts = [];
-    const phpVersion = data.meta && data.meta.php && data.meta.php.version;
-    if (phpVersion) parts.push("PHP " + phpVersion);
+    const runtime = data.meta && data.meta.runtime;
+    if (runtime && runtime.name) {
+      const runtimeLabel = runtime.name === "php" ? "PHP" : runtime.name;
+      parts.push(runtime.version ? runtimeLabel + " " + runtime.version : runtimeLabel);
+    }
     if (typeof data.summary.time.total === "number") parts.push("T " + Math.round(data.summary.time.total * 1000) + "ms");
     if (typeof data.summary.memory.usage === "number") parts.push("M " + formatMemory(data.summary.memory.usage));
     return parts.join(" · ");

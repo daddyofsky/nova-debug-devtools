@@ -38,6 +38,9 @@ copy_source() {
     --exclude "/test" \
     --exclude "/release" \
     --exclude "DESIGN.md" \
+    --exclude "TODO.md" \
+    --exclude "COMPARISON.md" \
+    --exclude "PLAN-*.md" \
     --exclude "build.sh" \
     --exclude "manifest.firefox.json" \
     --exclude "*.zip" \

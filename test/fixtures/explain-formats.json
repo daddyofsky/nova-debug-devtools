@@ -1,0 +1,168 @@
+{
+  "schemaVersion": 2,
+  "meta": {
+    "id": "260717_000000_0000000000000001",
+    "generator": "nova-debug/20260717",
+    "request": {
+      "uri": "/?debug=on",
+      "date": "2026-07-17 00:00:00"
+    },
+    "runtime": {
+      "name": "php",
+      "version": "8.5.1"
+    },
+    "dirRoot": "/home/www/nova_builder",
+    "transport": {
+      "cookieName": "DO",
+      "cookieOn": false
+    }
+  },
+  "summary": {
+    "time": {
+      "total": 0.05,
+      "debug": 0.001
+    },
+    "memory": {
+      "usage": 1000000,
+      "peak": 1000000
+    },
+    "queries": {
+      "count": 4,
+      "time": 0.01,
+      "slow": {
+        "count": 0,
+        "time": 0
+      },
+      "dup": {
+        "total": 0,
+        "patterns": 0,
+        "percent": 0
+      },
+      "loop": {
+        "total": 0,
+        "sites": 0,
+        "byType": []
+      },
+      "avg": 2.5,
+      "max": 5,
+      "maxIndex": 0
+    },
+    "files": {
+      "count": 1
+    }
+  },
+  "thresholds": {
+    "slowQueryTime": 0.01,
+    "tooManyCount": 50
+  },
+  "files": [
+    {
+      "path": "/public/index.php"
+    }
+  ],
+  "frames": [
+    {
+      "file": 0,
+      "line": 1,
+      "func": "main",
+      "args": "",
+      "argsFull": ""
+    }
+  ],
+  "entries": [
+    {
+      "index": 0,
+      "type": "query",
+      "time": 0.001,
+      "duration": 0.0025,
+      "label": "QUERY",
+      "dump": "SELECT * FROM menu WHERE id = 1",
+      "trace": [0],
+      "query": {
+        "table": "menu",
+        "warn": false,
+        "explain": {
+          "format": "table",
+          "columns": ["id", "select_type", "table", "type", "possible_keys", "key", "key_len", "ref", "rows", "Extra"],
+          "rows": [
+            [1, "SIMPLE", "menu", "const", "PRIMARY", "PRIMARY", 4, "const", 1, null]
+          ]
+        }
+      }
+    },
+    {
+      "index": 1,
+      "type": "query",
+      "time": 0.002,
+      "duration": 0.003,
+      "label": "QUERY",
+      "dump": "SELECT * FROM users WHERE email = 'a@b.com'",
+      "trace": [0],
+      "query": {
+        "table": "users",
+        "warn": true,
+        "explain": {
+          "format": "text",
+          "text": "Seq Scan on users  (cost=0.00..18.50 rows=850 width=97)\n  Filter: (email = 'a@b.com'::text)"
+        }
+      }
+    },
+    {
+      "index": 2,
+      "type": "query",
+      "time": 0.003,
+      "duration": 0.005,
+      "label": "QUERY",
+      "dump": "SELECT * FROM orders WHERE status = 'paid'",
+      "trace": [0],
+      "query": {
+        "table": "orders",
+        "warn": false,
+        "explain": {
+          "format": "json",
+          "json": [
+            {
+              "Plan": {
+                "Node Type": "Seq Scan",
+                "Relation Name": "orders",
+                "Total Cost": 20.5,
+                "Plan Rows": 100
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "index": 3,
+      "type": "query",
+      "time": 0.004,
+      "duration": 0.0025,
+      "label": "QUERY",
+      "dump": "SELECT * FROM menu WHERE parent_id = 1",
+      "trace": [0],
+      "query": {
+        "table": "menu",
+        "warn": false,
+        "explainHtml": "<table><tr><td>SIMPLE</td><td>menu</td></tr></table>",
+        "explain": {
+          "format": "table",
+          "columns": ["id", "select_type", "table", "type", "possible_keys", "key", "key_len", "ref", "rows", "Extra"],
+          "rows": [
+            [4, "SIMPLE", "menu", "ref", "idx_parent", "idx_parent", "4", "const", "3", "Using where"]
+          ]
+        }
+      }
+    }
+  ],
+  "timeline": [
+    {
+      "name": "START",
+      "start": 0,
+      "duration": 0.05
+    }
+  ],
+  "x-php": {
+    "opcache": true
+  }
+}

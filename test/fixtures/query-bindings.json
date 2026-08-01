@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 2,
+  "meta": {
+    "id": "260720_000000_0000000000000007",
+    "generator": "nova-debug/20260720",
+    "request": {
+      "uri": "/?debug=on",
+      "date": "2026-07-20T00:00:00+09:00"
+    },
+    "runtime": {
+      "name": "php",
+      "version": "8.5.1"
+    },
+    "dirRoot": "/home/www/nova_builder",
+    "transport": {
+      "cookieName": "DO",
+      "cookieOn": false
+    }
+  },
+  "summary": {
+    "time": {
+      "total": 0.05,
+      "debug": 0.001
+    },
+    "memory": {
+      "usage": 1000000,
+      "peak": 1000000
+    },
+    "queries": {
+      "count": 2,
+      "time": 0.006,
+      "slow": {
+        "count": 0,
+        "time": 0
+      },
+      "dup": {
+        "total": 0,
+        "patterns": 0,
+        "percent": 0
+      },
+      "loop": {
+        "total": 0,
+        "sites": 0,
+        "byType": []
+      },
+      "avg": 0.003,
+      "max": 0.004,
+      "maxIndex": 1
+    },
+    "files": {
+      "count": 1
+    }
+  },
+  "thresholds": {
+    "slowQueryTime": 0.01,
+    "tooManyCount": 50
+  },
+  "files": [
+    {
+      "path": "/public/index.php"
+    }
+  ],
+  "frames": [
+    {
+      "file": 0,
+      "line": 1,
+      "func": "main",
+      "args": "",
+      "argsFull": ""
+    }
+  ],
+  "entries": [
+    {
+      "index": 0,
+      "type": "query",
+      "time": 0.001,
+      "duration": 0.002,
+      "label": "QUERY",
+      "dump": "SELECT * FROM users WHERE id = ? AND status = ?",
+      "trace": [0],
+      "query": {
+        "table": "users",
+        "connection": "default",
+        "bindings": [42, "active"]
+      }
+    },
+    {
+      "index": 1,
+      "type": "query",
+      "time": 0.003,
+      "duration": 0.004,
+      "label": "QUERY",
+      "dump": "SELECT * FROM logs WHERE created_at > ? AND deleted_at IS ?",
+      "trace": [0],
+      "query": {
+        "table": "logs",
+        "connection": "mysql_read",
+        "bindings": ["2026-07-01 00:00:00", null]
+      }
+    },
+    {
+      "index": 2,
+      "type": "dump",
+      "time": 0.004,
+      "duration": 0,
+      "label": "RESPONSE BODY",
+      "dump": "{\"id\":42,\"name\":\"daddy\", ... (truncated)",
+      "trace": [0],
+      "truncated": true
+    }
+  ],
+  "timeline": [
+    {
+      "name": "START",
+      "start": 0,
+      "duration": 0.05
+    }
+  ],
+  "x-php": {
+    "opcache": true
+  }
+}

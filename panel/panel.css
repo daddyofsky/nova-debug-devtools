@@ -32,6 +32,16 @@
   --nd-json-boolean: #c2410c;
   --nd-json-null: #888888;
   --nd-json-punct: #888888;
+  --nd-fh-blue: #3b8df5;
+  --nd-fh-green: #2dba42;
+  --nd-fh-orange: #f08a18;
+  --nd-fh-red: #f04458;
+  --nd-fh-purple: #8c4df7;
+  --nd-fh-teal: #12bfcc;
+  --nd-fh-pink: #f04e90;
+  --nd-fh-brown: #b07860;
+  --nd-fh-gray: #94a0b8;
+  --nd-fh-black: #444;
   --nd-font: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --nd-font-mono: ui-monospace, "SF Mono", Monaco, Consolas, monospace;
 }
@@ -65,6 +75,16 @@
     --nd-json-boolean: #ffa657;
     --nd-json-null: #9aa0a6;
     --nd-json-punct: #9aa0a6;
+    --nd-fh-blue: #74b0ff;
+    --nd-fh-green: #6ecf7a;
+    --nd-fh-orange: #ffab57;
+    --nd-fh-red: #ff7b86;
+    --nd-fh-purple: #b69cff;
+    --nd-fh-teal: #56d4df;
+    --nd-fh-pink: #f48fb1;
+    --nd-fh-brown: #bcaaa4;
+    --nd-fh-gray: #9ca0b0;
+    --nd-fh-black: #cdd6f4;
   }
 }
 
@@ -96,6 +116,16 @@
   --nd-json-boolean: #ffa657;
   --nd-json-null: #9aa0a6;
   --nd-json-punct: #9aa0a6;
+  --nd-fh-blue: #74b0ff;
+  --nd-fh-green: #6ecf7a;
+  --nd-fh-orange: #ffab57;
+  --nd-fh-red: #ff7b86;
+  --nd-fh-purple: #b69cff;
+  --nd-fh-teal: #56d4df;
+  --nd-fh-pink: #f48fb1;
+  --nd-fh-brown: #bcaaa4;
+  --nd-fh-gray: #9ca0b0;
+  --nd-fh-black: #cdd6f4;
 }
 
 :root[data-theme="light"] {
@@ -126,6 +156,16 @@
   --nd-json-boolean: #c2410c;
   --nd-json-null: #888888;
   --nd-json-punct: #888888;
+  --nd-fh-blue: #3b8df5;
+  --nd-fh-green: #2dba42;
+  --nd-fh-orange: #f08a18;
+  --nd-fh-red: #f04458;
+  --nd-fh-purple: #8c4df7;
+  --nd-fh-teal: #12bfcc;
+  --nd-fh-pink: #f04e90;
+  --nd-fh-brown: #b07860;
+  --nd-fh-gray: #94a0b8;
+  --nd-fh-black: #444;
 }
 
 html, body {
@@ -461,20 +501,25 @@ html, body {
   cursor: pointer;
 }
 
+/* 토글 아이콘은 한 글자 폭만 차지 — 넓으면 컨테이너 항목만 밀려 동일 레벨이 다르게 보인다 */
 .d-json-toggle {
   flex: 0 0 auto;
-  width: 28px;
-  height: 20px;
-  margin-right: 4px;
+  width: 12px;
+  margin-right: 2px;
   padding: 0;
   border: none;
   background: none;
   color: var(--nd-text-dim);
   font-family: var(--nd-font-mono);
-  font-size: 20px;
-  line-height: 20px;
+  font-size: 14px;
+  line-height: 1;
   text-align: center;
   cursor: pointer;
+}
+
+/* 토글이 없는 리프 라인도 아이콘 폭만큼 들여써 같은 레벨끼리 정렬 유지 */
+.d-json-children > .d-json-line {
+  padding-left: 14px;
 }
 
 .d-json-children {
@@ -831,6 +876,18 @@ html, body {
   border: 1px solid var(--nd-data-border);
 }
 
+.d-explain-text {
+  margin: 0;
+  padding: 6px;
+  max-height: 300px;
+  overflow: auto;
+  font-family: var(--nd-font-mono);
+  font-size: 11px;
+  background: var(--nd-data-bg);
+  border: 1px solid var(--nd-data-border);
+  white-space: pre-wrap;
+}
+
 .d-badge {
   display: inline-block;
   margin-right: 5px;
@@ -844,6 +901,8 @@ html, body {
 
 .d-dup { background-color: var(--nd-badge-dup); }
 .d-loop { background-color: var(--nd-badge-loop); }
+.d-type-generic { background-color: var(--nd-section-title-bg); }
+.d-truncated { background-color: var(--nd-badge-slow); color: #333; }
 
 .d-table {
   display: inline-block;
@@ -943,12 +1002,15 @@ html, body {
 }
 
 .d-q-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
   padding: 3px 4px;
   border-bottom: 1px solid var(--nd-border-soft);
   cursor: pointer;
+}
+
+.d-q-row-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .d-q-row:hover {
@@ -957,6 +1019,26 @@ html, body {
 
 .d-q-row.d-remark {
   background-color: var(--nd-remark-bg);
+}
+
+.d-connection {
+  background-color: var(--nd-section-title-bg);
+}
+
+.d-q-bindings {
+  margin-top: 2px;
+  padding-left: 4px;
+  color: var(--nd-text-dim);
+  font-size: 11px;
+}
+
+.d-q-bindings-label {
+  font-weight: 700;
+  margin-right: 4px;
+}
+
+.d-q-bindings code {
+  font-family: var(--nd-font-mono);
 }
 
 .d-q-time {
@@ -1175,9 +1257,27 @@ html, body {
   padding: 1px 0;
 }
 
+/* 링크 스타일은 기존 웹버전(debug.css)과 동일 — dim 색, 밑줄 없음, hover 시 파란색 */
 #tab-files a {
-  color: var(--nd-accent);
+  color: var(--nd-text-dim);
+  text-decoration: none;
 }
+
+#tab-files a:hover {
+  color: #41a0ff;
+}
+
+/* 경로 하이라이트 — 서버 x-nova.fileHighlight(경로 부분문자열 → 색상명) 매핑, debug.js 팔레트와 동일 */
+.d-fh-blue { color: var(--nd-fh-blue); font-weight: 700; }
+.d-fh-green { color: var(--nd-fh-green); font-weight: 700; }
+.d-fh-orange { color: var(--nd-fh-orange); font-weight: 700; }
+.d-fh-red { color: var(--nd-fh-red); font-weight: 700; }
+.d-fh-purple { color: var(--nd-fh-purple); font-weight: 700; }
+.d-fh-teal { color: var(--nd-fh-teal); font-weight: 700; }
+.d-fh-pink { color: var(--nd-fh-pink); font-weight: 700; }
+.d-fh-brown { color: var(--nd-fh-brown); font-weight: 700; }
+.d-fh-gray { color: var(--nd-fh-gray); font-weight: normal; }
+.d-fh-black { color: var(--nd-fh-black); font-weight: 700; }
 
 .d-summary-table {
   border-collapse: collapse;

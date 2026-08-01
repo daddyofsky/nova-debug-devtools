@@ -23,6 +23,27 @@
   const CUSTOM_PROTOCOL_VALUE = "__custom__";
   const STORAGE_KEYS = NovaDebugProtocol.STORAGE_KEYS;
 
+  // 페이지 헤더 — 확장 이름/버전 (manifest 가 단일 출처)
+  const manifest = ext.runtime.getManifest();
+  document.getElementById("ext-name").textContent = manifest.name;
+  document.getElementById("ext-version").textContent = "v" + manifest.version;
+
+  // 설정 페이지도 테마 설정을 따른다 — auto 는 속성을 제거해 OS 다크 모드(media query)에 위임
+  function applyTheme(theme) {
+    if (theme === "dark" || theme === "light") {
+      document.documentElement.setAttribute("data-theme", theme);
+    } else {
+      document.documentElement.removeAttribute("data-theme");
+    }
+  }
+
+  // 라디오 선택 즉시 미리보기 (저장 전에는 storage 에 반영되지 않는다)
+  themeInputs.forEach((input) => {
+    input.addEventListener("change", () => {
+      if (input.checked) applyTheme(input.value);
+    });
+  });
+
   function storageArea() {
     return ext.storage.sync || ext.storage.local;
   }
@@ -166,6 +187,7 @@
       .then(([hostMap, res]) => {
         const theme = (res && res.theme) || "auto";
         themeInputs.forEach((input) => { input.checked = input.value === theme; });
+        applyTheme(theme);
         showTimeChk.checked = !(res && res.showTime === false);
         const maxEntriesVal = res && res.maxEntries;
         maxEntriesEl.value = (typeof maxEntriesVal === "number" && maxEntriesVal > 0) ? maxEntriesVal : 100;
@@ -323,11 +345,7 @@
   // Chrome: 확장 API 로 변경 불가 — chrome://extensions/shortcuts 열기 버튼만 제공.
   // ------------------------------------------------------------
 
-  const shortcutSectionEls = [
-    document.getElementById("shortcut-options"),
-    document.getElementById("shortcut-options").previousElementSibling, // hint
-    document.getElementById("shortcut-options").previousElementSibling.previousElementSibling, // h1
-  ];
+  const shortcutSectionEls = [document.getElementById("shortcut-section")];
   const shortcutCurrentEl = document.getElementById("shortcut-current");
   const shortcutFirefoxEl = document.getElementById("shortcut-firefox-controls");
   const shortcutInputEl = document.getElementById("shortcut-input");

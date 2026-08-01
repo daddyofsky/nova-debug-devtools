@@ -32,16 +32,34 @@
     return html;
   }
 
-  // 목록 한 줄 — index / 시간 / (테이블) / 한줄 요약. showTable=false 는 테이블별 뷰에서 그룹 헤더가 테이블명을 대신 보여줄 때.
+  // query.bindings(prepared statement 파라미터)를 "[0] "abc", [1] 42" 류 컴팩트 텍스트로 표시. null은 NULL.
+  function buildBindingsHtml(bindings) {
+    const text = bindings.map((val, i) => {
+      let display;
+      if (val === null) display = 'NULL';
+      else if (typeof val === 'string') display = '"' + val + '"';
+      else display = String(val);
+      return '[' + i + '] ' + display;
+    }).join(', ');
+    return '<span class="d-q-bindings-label">Bindings</span> <code>' + escHtml(text) + '</code>';
+  }
+
+  // 목록 한 줄 — index / 시간 / (커넥션) / (테이블) / 한줄 요약, bindings가 있으면 SQL 아래에 추가 표시.
+  // showTable=false 는 테이블별 뷰에서 그룹 헤더가 테이블명을 대신 보여줄 때.
   function queryRowHtml(item, dataIdx, showTable, slowQueryThreshold) {
     const remark = item.duration > slowQueryThreshold ? 'd-remark' : '';
+    const q = item.query || {};
     let html = '<div class="d-q-row ' + remark + '" data-didx="' + dataIdx + '">';
+    html += '<div class="d-q-row-main">';
     html += '<b class="d-index">[' + item.index + ']</b>';
     html += '<span class="d-q-time">[' + item.duration.toFixed(5) + ']</span>';
     html += RowRenderer.queryBadges(item);
-    if (showTable) html += '<strong class="d-table">' + escHtml(item.query.table) + '</strong>';
+    if (q.connection) html += '<span class="d-badge d-connection">' + escHtml(q.connection) + '</span>';
+    if (showTable) html += '<strong class="d-table">' + escHtml(q.table || '(unknown)') + '</strong>';
     html += '<span class="d-q-summary">' + SqlFormatter.simple(escHtml(SqlFormatter.truncateIn(item.dump))) + '</span>';
     html += '<button type="button" class="d-copy-btn" title="복사">📋</button>';
+    html += '</div>';
+    if (q.bindings && q.bindings.length) html += '<div class="d-q-bindings">' + buildBindingsHtml(q.bindings) + '</div>';
     html += '</div>';
     return html;
   }
