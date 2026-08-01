@@ -22,6 +22,10 @@
   const DNR_RULE_ID_MAX = DNR_RULE_ID_BASE + 999; // 전체 탭이 공유하는 rule id 풀 상한
   const RESOURCE_TYPES = ["main_frame", "sub_frame", "xmlhttprequest"];
 
+  // popup/단축키로 켠(devtools 미등록) 탭 목록 — SW 재시작에도 살아남는 storage.session 에 둔다.
+  // DNR 경로(Chrome) 전용: Firefox(webRequest)는 메모리 상태라 SW 재시작 자체가 없어 대상 아님.
+  const SESSION_TABS_KEY = "popupEnabledTabs";
+
   function hasDeclarativeNetRequest() {
     return !!(
       ext.declarativeNetRequest &&
@@ -41,6 +45,34 @@
 
   function storageArea() {
     return ext.storage.sync || ext.storage.local;
+  }
+
+  function sessionArea() {
+    return (ext.storage && ext.storage.session) || null;
+  }
+
+  async function loadPersistedTabs() {
+    const area = sessionArea();
+    if (!area) return [];
+    const res = await area.get(SESSION_TABS_KEY);
+    const list = res && res[SESSION_TABS_KEY];
+    return Array.isArray(list) ? list : [];
+  }
+
+  async function persistTab(tabId) {
+    const area = sessionArea();
+    if (!area) return;
+    const tabIds = await loadPersistedTabs();
+    if (tabIds.includes(tabId)) return;
+    await area.set({ [SESSION_TABS_KEY]: tabIds.concat(tabId) });
+  }
+
+  async function unpersistTab(tabId) {
+    const area = sessionArea();
+    if (!area) return;
+    const tabIds = await loadPersistedTabs();
+    if (!tabIds.includes(tabId)) return;
+    await area.set({ [SESSION_TABS_KEY]: tabIds.filter((id) => id !== tabId) });
   }
 
   // hostMap(호스트별 enabled/토큰 오버라이드 조회용) + 전역 토큰 — tokenForHost() 계산에
@@ -71,6 +103,18 @@
   // DevTools 오픈 즉시 캡쳐(captureOnOpen)로 설정된 경우.
   function hostInjectable(entry, capture) {
     return !!(entry && entry.enabled && (capture || entry.captureOnOpen));
+  }
+
+  // enableViaDnr/disableViaDnr 는 getSessionRules 스냅샷 → updateSessionRules 순서라
+  // 직렬화 없이 동시 호출되면(storage.onChanged 가 여러 탭에 한꺼번에 쏘거나 REGISTER+
+  // PANEL_SHOWN 이 연달아 들어오는 경우) id 충돌/규칙 유실이 생긴다. 전역 큐 하나로 실행
+  // 순서를 강제한다. dnrQueue 자체는 항상 resolve 시켜(에러를 삼켜) 큐가 끊기지 않게 하고,
+  // 각 호출자에게는 실제 fn() 결과(성공/실패)를 그대로 돌려준다.
+  let dnrQueue = Promise.resolve();
+  function enqueueDnr(fn) {
+    const result = dnrQueue.then(fn, fn);
+    dnrQueue = result.catch(() => {});
+    return result;
   }
 
   async function enableViaDnr(tabId) {
@@ -187,12 +231,19 @@
   // 이전 세션의 승격(capture=true)이 event page 메모리에 남아, 재오픈 시 체크박스와 무관하게
   // 전체 주입되는 문제가 있었다. 재시작/재연결 시 패널이 이미 표시된 상태였다면 devtools.js 가
   // PANEL_SHOWN 을 재전송하므로 리셋해도 승격이 곧바로 복원된다.
+  // opts.persist: true 면 devtools 없이(popup/단축키) 켠 탭이라는 뜻 — SW 재시작 후에도
+  // 다시 enable() 되도록 storage.session 목록에 tabId 를 남긴다(restorePersistedTabs 참조).
   async function enable(tabId, opts) {
     const prev = tabCaptures(tabId);
     const capture = (opts && typeof opts.capture === "boolean") ? opts.capture : prev;
     activeTabs.set(tabId, { capture });
     if (hasDeclarativeNetRequest()) {
-      await enableViaDnr(tabId);
+      await enqueueDnr(() => enableViaDnr(tabId));
+      if (opts && opts.persist) {
+        await persistTab(tabId).catch((err) =>
+          console.error("[NovaDebug] popup 탭 상태 저장 실패", err)
+        );
+      }
     } else {
       await refreshCaches();
       ensureListener();
@@ -202,7 +253,49 @@
   async function disable(tabId) {
     activeTabs.delete(tabId);
     if (hasDeclarativeNetRequest()) {
-      await disableViaDnr(tabId);
+      await enqueueDnr(() => disableViaDnr(tabId));
+      await unpersistTab(tabId).catch((err) =>
+        console.error("[NovaDebug] popup 탭 상태 제거 실패", err)
+      );
+    }
+  }
+
+  // SW 재시작 직후 cleanupAll() 로 지워진 rule 중, devtools 재연결로는 복구되지 않는
+  // popup/단축키 전용 탭을 storage.session 목록 기준으로 되살린다. 탭이 이미 닫혔으면
+  // 목록에서 제거한다. Firefox(webRequest) 경로는 대상이 아니다.
+  async function restorePersistedTabs() {
+    if (!hasDeclarativeNetRequest()) return;
+    const area = sessionArea();
+    if (!area) return;
+    let tabIds;
+    try {
+      tabIds = await loadPersistedTabs();
+    } catch (err) {
+      console.error("[NovaDebug] popup 탭 목록 복원 실패", err);
+      return;
+    }
+    if (!tabIds.length) return;
+
+    const survivors = [];
+    for (const tabId of tabIds) {
+      let exists = true;
+      try {
+        await ext.tabs.get(tabId);
+      } catch (err) {
+        exists = false;
+      }
+      if (!exists) continue;
+      survivors.push(tabId);
+      try {
+        await enable(tabId, { capture: true });
+      } catch (err) {
+        console.error("[NovaDebug] popup 탭 헤더 주입 복원 실패", tabId, err);
+      }
+    }
+    if (survivors.length !== tabIds.length) {
+      await area.set({ [SESSION_TABS_KEY]: survivors }).catch((err) =>
+        console.error("[NovaDebug] popup 탭 목록 정리 실패", err)
+      );
     }
   }
 
@@ -214,7 +307,7 @@
       if (!relevant) return;
       if (hasDeclarativeNetRequest()) {
         activeTabs.forEach((state, tabId) => {
-          enableViaDnr(tabId).catch((err) =>
+          enqueueDnr(() => enableViaDnr(tabId)).catch((err) =>
             console.error("[NovaDebug] 호스트/토큰 변경 반영 실패", err)
           );
         });
@@ -224,19 +317,23 @@
     });
   }
 
-  // 서비스워커 재시작 시 이전에 등록된 rule 잔존분 정리 (열려 있는 패널은
-  // onDisconnect → 재연결 → 재 REGISTER 로 다시 등록하므로 안전).
+  // 서비스워커 재시작 시 이전에 등록된 rule 잔존분 정리. 열려 있는 패널은 onDisconnect →
+  // 재연결 → 재 REGISTER 로, popup/단축키 전용 탭은 restorePersistedTabs() 로 각각 다시
+  // 등록하므로 안전하다. enqueueDnr 로 감싸는 이유: main.js 가 이 호출 직후 REGISTER 를
+  // 받아 enableViaDnr 를 큐잉할 수 있는데, 직렬화 없이는 이 정리와 뒤이은 등록이 뒤섞일 수 있다.
   async function cleanupAll() {
     if (!hasDeclarativeNetRequest()) return; // webRequest 경로는 메모리 상태라 재시작 시 자동 소멸
-    const rules = await ext.declarativeNetRequest.getSessionRules();
-    const ourRuleIds = rules
-      .map((rule) => rule.id)
-      .filter((id) => id >= DNR_RULE_ID_BASE);
-    if (ourRuleIds.length === 0) return;
-    await ext.declarativeNetRequest.updateSessionRules({
-      removeRuleIds: ourRuleIds,
+    await enqueueDnr(async () => {
+      const rules = await ext.declarativeNetRequest.getSessionRules();
+      const ourRuleIds = rules
+        .map((rule) => rule.id)
+        .filter((id) => id >= DNR_RULE_ID_BASE);
+      if (ourRuleIds.length === 0) return;
+      await ext.declarativeNetRequest.updateSessionRules({
+        removeRuleIds: ourRuleIds,
+      });
     });
   }
 
-  root.NovaHeaderInject = { enable, disable, cleanupAll };
+  root.NovaHeaderInject = { enable, disable, cleanupAll, restorePersistedTabs };
 })(typeof self !== "undefined" ? self : this);

@@ -42,6 +42,13 @@
   // 탭별 독립 검색어 — entry 전환 시에도 유지한다 (탭 간에는 공유하지 않음)
   const tabSearch = { dumps: "", queries: "", files: "" };
 
+  // renderList() 증분 렌더 판단 기준 스냅샷 — 직전 렌더에 사용된 필터링 결과/조건과 동일한
+  // prefix 에 신규 항목만 append 된 경우에만 DOM 전체 재구성을 건너뛴다.
+  let lastRenderedList = [];
+  let lastFilterText = null;
+  let lastShowTime = null;
+  let lastSelectedEntry = undefined;
+
   // 평상시(정상 연결)에는 숨기고, connecting/reconnecting 등 비정상 상태일 때만 경고 톤으로 표시한다.
   function setStatus(text) {
     statusEl.textContent = text;
@@ -225,71 +232,99 @@
     );
   }
 
-  function renderList() {
-    listEl.textContent = "";
-    for (const entry of entries.filter(matchesFilter)) {
-      const row = document.createElement("div");
-      row.className = "row";
-      if (entry.error) row.classList.add("row-error");
-      if (entry.stats && entry.stats.hasError) row.classList.add("row-data-error");
-      if (selectedEntry === entry) row.classList.add("row-selected");
+  function buildRow(entry) {
+    const row = document.createElement("div");
+    row.className = "row";
+    if (entry.error) row.classList.add("row-error");
+    if (entry.stats && entry.stats.hasError) row.classList.add("row-data-error");
+    if (selectedEntry === entry) row.classList.add("row-selected");
 
-      if (showTime) {
-        const time = document.createElement("span");
-        time.className = "col-time";
-        time.textContent = entry.time.toLocaleTimeString();
-        row.appendChild(time);
-      }
-
-      const method = document.createElement("span");
-      method.className = "col-method";
-      method.textContent = entry.method;
-
-      const url = document.createElement("span");
-      url.className = "col-url";
-      url.textContent = urlPath(entry.url);
-      url.title = entry.url;
-
-      const badges = document.createElement("span");
-      badges.className = "col-badges";
-      if (entry.stats) {
-        if (entry.stats.queryCount) {
-          const b = document.createElement("span");
-          b.className = "list-badge list-badge-query";
-          b.textContent = "Q" + entry.stats.queryCount;
-          b.title = "쿼리 " + entry.stats.queryCount + "건";
-          badges.appendChild(b);
-        }
-        if (entry.stats.slowCount) {
-          const b = document.createElement("span");
-          b.className = "list-badge list-badge-slow";
-          b.textContent = "S" + entry.stats.slowCount;
-          b.title = "slow query " + entry.stats.slowCount + "건";
-          badges.appendChild(b);
-        }
-        if (entry.stats.hasError) {
-          const b = document.createElement("span");
-          b.className = "list-badge list-badge-error";
-          b.textContent = "ERR";
-          b.title = "에러 포함";
-          badges.appendChild(b);
-        }
-        if (entry.stats.hasRedirect) {
-          const b = document.createElement("span");
-          b.className = "list-badge list-badge-redirect";
-          b.textContent = "RDR";
-          b.title = "리다이렉트";
-          badges.appendChild(b);
-        }
-      }
-
-      row.appendChild(method);
-      row.appendChild(url);
-      row.appendChild(badges);
-
-      row.addEventListener("click", () => selectEntry(entry));
-      listEl.appendChild(row);
+    if (showTime) {
+      const time = document.createElement("span");
+      time.className = "col-time";
+      time.textContent = entry.time.toLocaleTimeString();
+      row.appendChild(time);
     }
+
+    const method = document.createElement("span");
+    method.className = "col-method";
+    method.textContent = entry.method;
+
+    const url = document.createElement("span");
+    url.className = "col-url";
+    url.textContent = urlPath(entry.url);
+    url.title = entry.url;
+
+    const badges = document.createElement("span");
+    badges.className = "col-badges";
+    if (entry.stats) {
+      if (entry.stats.queryCount) {
+        const b = document.createElement("span");
+        b.className = "list-badge list-badge-query";
+        b.textContent = "Q" + entry.stats.queryCount;
+        b.title = "쿼리 " + entry.stats.queryCount + "건";
+        badges.appendChild(b);
+      }
+      if (entry.stats.slowCount) {
+        const b = document.createElement("span");
+        b.className = "list-badge list-badge-slow";
+        b.textContent = "S" + entry.stats.slowCount;
+        b.title = "slow query " + entry.stats.slowCount + "건";
+        badges.appendChild(b);
+      }
+      if (entry.stats.hasError) {
+        const b = document.createElement("span");
+        b.className = "list-badge list-badge-error";
+        b.textContent = "ERR";
+        b.title = "에러 포함";
+        badges.appendChild(b);
+      }
+      if (entry.stats.hasRedirect) {
+        const b = document.createElement("span");
+        b.className = "list-badge list-badge-redirect";
+        b.textContent = "RDR";
+        b.title = "리다이렉트";
+        badges.appendChild(b);
+      }
+    }
+
+    row.appendChild(method);
+    row.appendChild(url);
+    row.appendChild(badges);
+
+    row.addEventListener("click", () => selectEntry(entry));
+    return row;
+  }
+
+  // 신규 요청이 목록 끝에 추가되는 가장 흔한 케이스는 기존 행을 건드리지 않고 append만 한다.
+  // 필터/showTime/선택 상태가 바뀌었거나 기존 항목이 제자리에서 갱신된 경우(예: stats 비동기 도착)는
+  // prefix 비교가 어긋나거나 신규 추가분이 없으므로 안전하게 전체 재구성으로 폴백한다.
+  function renderList() {
+    const filtered = entries.filter(matchesFilter);
+    const canAppend =
+      filterText === lastFilterText &&
+      showTime === lastShowTime &&
+      selectedEntry === lastSelectedEntry &&
+      filtered.length > lastRenderedList.length &&
+      lastRenderedList.every((entry, i) => entry === filtered[i]);
+
+    if (canAppend) {
+      const fragment = document.createDocumentFragment();
+      for (let i = lastRenderedList.length; i < filtered.length; i++) {
+        fragment.appendChild(buildRow(filtered[i]));
+      }
+      listEl.appendChild(fragment);
+    } else {
+      listEl.textContent = "";
+      for (const entry of filtered) {
+        listEl.appendChild(buildRow(entry));
+      }
+    }
+
+    lastRenderedList = filtered;
+    lastFilterText = filterText;
+    lastShowTime = showTime;
+    lastSelectedEntry = selectedEntry;
   }
 
   // ------------------------------------------------------------
@@ -305,8 +340,8 @@
     const data = entry && entry.data;
     const isV2 = data && data.schemaVersion === 2;
     setTabCount("dumps", isV2 ? data.entries.length : null);
-    setTabCount("queries", isV2 ? data.summary.queries.count : null);
-    setTabCount("files", isV2 ? data.summary.files.count : null);
+    setTabCount("queries", isV2 && data.summary.queries ? data.summary.queries.count : null);
+    setTabCount("files", isV2 && data.summary.files ? data.summary.files.count : null);
   }
 
   function clearTabPanels() {
@@ -447,7 +482,25 @@
     return parts.join(" · ");
   }
 
+  // 마지막으로 상세 영역에 그린 상태 스냅샷 — 새 요청 추가 등 목록만 바뀐 notify 에서
+  // 선택 요청의 상세 내용이 그대로면 재렌더(깜빡임)를 건너뛰기 위한 비교 기준.
+  let detailSnapshot = null;
+
+  function detailStateOf(entry) {
+    if (!entry) return { entry: null, data: null, error: null, retrying: false, status: null };
+    return { entry, data: entry.data, error: entry.error, retrying: entry.retrying, status: entry.status };
+  }
+
+  function detailUnchanged(entry) {
+    const prev = detailSnapshot;
+    if (!prev) return false;
+    const cur = detailStateOf(entry);
+    return prev.entry === cur.entry && prev.data === cur.data && prev.error === cur.error &&
+      prev.retrying === cur.retrying && prev.status === cur.status;
+  }
+
   function renderDetail(entry) {
+    detailSnapshot = detailStateOf(entry);
     updateTabCounts(entry);
     if (!entry) {
       detailHeaderMainEl.textContent = "요청을 선택하세요";
@@ -523,7 +576,8 @@
       }
       refreshCaptureControl();
       renderList();
-      renderDetail(selectedEntry);
+      // 새 요청 추가처럼 목록만 바뀐 변경에서는 상세 영역 재렌더를 건너뛴다 (preserve log 시 깜빡임 방지)
+      if (!detailUnchanged(selectedEntry)) renderDetail(selectedEntry);
     });
 
     setStatus(shared.getStatus());

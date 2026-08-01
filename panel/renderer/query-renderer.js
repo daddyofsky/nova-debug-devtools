@@ -10,23 +10,28 @@
   const SqlFormatter = NS.SqlFormatter;
   const RowRenderer = NS.RowRenderer;
 
+  // 초→ms 환산 시 부동소수점 꼬리(0.32000000000000006)가 그대로 노출되지 않도록 소수점 최대 5자리로 고정
+  function formatMs(seconds) {
+    return +(seconds * 1000).toFixed(5);
+  }
+
   function buildStatsHtml(debugData) {
     const q = debugData.summary.queries;
-    if (!q.count) return '';
+    if (!q || !q.count) return '';
     let html = '<div class="d-query-stats">';
-    html += '<span class="d-stat-line">Total: <b>' + q.time + 's</b> / Count: <b>' + q.count + '</b> / Avg: <b>' + q.avg + 'ms</b> / Max: <b>' + q.max + 'ms</b> (idx:' + q.maxIndex + ')</span>';
-    if (q.dup.patterns) {
-      html += '<span class="d-stat-line">Duplicate: <b>' + q.dup.patterns + '</b> patterns, <b>' + q.dup.total + '</b> queries (' + q.dup.percent + '%)</span>';
+    html += '<span class="d-stat-line">Total: <b>' + escHtml(q.time) + 's</b> / Count: <b>' + escHtml(q.count) + '</b> / Avg: <b>' + formatMs(q.avg) + 'ms</b> / Max: <b>' + formatMs(q.max) + 'ms</b> (idx:' + escHtml(q.maxIndex) + ')</span>';
+    if (q.dup && q.dup.patterns) {
+      html += '<span class="d-stat-line">Duplicate: <b>' + escHtml(q.dup.patterns) + '</b> patterns, <b>' + escHtml(q.dup.total) + '</b> queries (' + escHtml(q.dup.percent) + '%)</span>';
     }
-    if (q.loop.sites) {
+    if (q.loop && q.loop.sites) {
       let loopDetail = '';
       if (q.loop.byType && q.loop.byType.length) {
-        loopDetail = ' — ' + q.loop.byType.map((g) => g.table + ' x' + g.count).join(', ');
+        loopDetail = ' — ' + q.loop.byType.map((g) => escHtml(g.table) + ' x' + escHtml(g.count)).join(', ');
       }
-      html += '<span class="d-stat-line">Loop: <b>' + q.loop.sites + '</b> sites, <b>' + q.loop.total + '</b> queries' + loopDetail + '</span>';
+      html += '<span class="d-stat-line">Loop: <b>' + escHtml(q.loop.sites) + '</b> sites, <b>' + escHtml(q.loop.total) + '</b> queries' + loopDetail + '</span>';
     }
-    if (q.slow.count) {
-      html += '<span class="d-stat-line">Slow (&gt;' + ((debugData.thresholds.slowQueryTime || 0) * 1000) + 'ms): <b>' + q.slow.count + '</b> queries (' + q.slow.time + 's)</span>';
+    if (q.slow && q.slow.count) {
+      html += '<span class="d-stat-line">Slow (&gt;' + escHtml((debugData.thresholds.slowQueryTime || 0) * 1000) + 'ms): <b>' + escHtml(q.slow.count) + '</b> queries (' + escHtml(q.slow.time) + 's)</span>';
     }
     html += '</div>';
     return html;
@@ -141,19 +146,20 @@
     html += '<div class="d-tab-search-wrap"><input type="text" class="d-tab-search" data-role="search" placeholder="SQL 검색" value="' + escHtml(searchText) + '"></div>';
     html += '</div>';
     html += buildStatsHtml(debugData);
-    html += '<div class="d-content d-q-view-table">' + buildTableView(debugData, slowQueryThreshold) + '</div>';
-    html += '<div class="d-content d-q-view-order" style="display:none">' + buildOrderView(debugData, slowQueryThreshold) + '</div>';
+    html += '<div class="d-content d-q-view-table" data-built="1">' + buildTableView(debugData, slowQueryThreshold) + '</div>';
+    html += '<div class="d-content d-q-view-order" style="display:none"></div>';
     root.innerHTML = html;
     container.appendChild(root);
 
-    applyQuerySearch(root, debugData, searchText);
+    let currentSearch = searchText;
+    applyQuerySearch(root, debugData, currentSearch);
 
     const searchInput = root.querySelector('.d-tab-search');
     if (searchInput) {
       searchInput.addEventListener('input', () => {
-        const val = searchInput.value.trim();
-        if (typeof opts.onSearchChange === 'function') opts.onSearchChange(val);
-        applyQuerySearch(root, debugData, val);
+        currentSearch = searchInput.value.trim();
+        if (typeof opts.onSearchChange === 'function') opts.onSearchChange(currentSearch);
+        applyQuerySearch(root, debugData, currentSearch);
       });
     }
 
@@ -163,8 +169,15 @@
         e.preventDefault();
         const view = viewBtn.dataset.view;
         root.querySelectorAll('.d-q-view-btn').forEach((b) => b.classList.toggle('active', b === viewBtn));
-        root.querySelector('.d-q-view-order').style.display = view === 'order' ? '' : 'none';
-        root.querySelector('.d-q-view-table').style.display = view === 'table' ? '' : 'none';
+        const orderEl = root.querySelector('.d-q-view-order');
+        const tableEl = root.querySelector('.d-q-view-table');
+        if (view === 'order' && !orderEl.dataset.built) {
+          orderEl.innerHTML = buildOrderView(debugData, slowQueryThreshold);
+          orderEl.dataset.built = '1';
+          applyQuerySearch(root, debugData, currentSearch);
+        }
+        orderEl.style.display = view === 'order' ? '' : 'none';
+        tableEl.style.display = view === 'table' ? '' : 'none';
         return;
       }
 

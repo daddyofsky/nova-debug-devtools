@@ -2,6 +2,36 @@
 
 이 문서는 Nova Debug DevTools 확장의 릴리즈 이력을 기록한다.
 
+## [2.1.0] - 2026-08-01
+
+코드 리뷰로 드러난 v2 전환 이후의 안정성 문제를 수정했다.
+
+### 보안
+
+- Queries 탭 XSS 수정 — 테이블별/순서기준 뷰의 통계·행 렌더링에서 이스케이프 누락 필드(`table`/`time`/`count`/`maxIndex`/loop 그룹명 등) 전부에 `escHtml` 적용
+
+### 안정성
+
+- MV3 SW 재시작 시 popup/단축키로 켠(devtools 미등록) 탭의 헤더 주입이 사라지던 문제 수정 — `storage.session`에 대상 탭을 기록해두고 재시작 후 복원(`restorePersistedTabs`)
+- DNR rule 갱신 직렬화 — `enableViaDnr`/`disableViaDnr`가 동시 호출되면 스냅샷-갱신 경합으로 rule이 유실될 수 있어 큐로 순서를 강제
+- devtools 재연결 안정화 — REGISTER/PANEL_SHOWN 전송 실패 시 재연결 예약 경로로 전환, entries 트리밍 시 `ownFetchUrls` 누적 정리, `summary.queries`/`.slow`/`.files` 부재 방어
+
+### 렌더링 성능
+
+- 요청 목록 증분 렌더 — 신규 요청이 끝에 추가되는 경우 DOM 전체 재구성 대신 append만 수행
+- Queries 탭 순서기준 뷰 지연 빌드 — 첫 진입 시 테이블별 뷰만 그리고 순서기준은 실제 전환 시점에 빌드
+- 상세 영역 불필요한 재렌더 스킵 — 목록만 바뀐 notify에서 선택된 요청의 상세 내용이 그대로면 재렌더(깜빡임)를 건너뜀
+
+### 수정
+
+- `summary.queries.avg`/`.max` 단위 버그 수정 — 스키마상 초 단위인데 ms로 오인해 그대로 출력하던 문제, 표시 직전 `*1000` 변환 적용
+- SQL 포매터 문자열 리터럴 처리 — 리터럴 내부의 따옴표/괄호/키워드가 절 분할·서브쿼리 추출 로직에 잘못 노출되던 문제 수정
+- options/popup 설정 유실 방지 — 옵션 페이지는 편집 중 외부 변경을 조용히 덮어쓰지 않도록 dirty 추적 추가, popup은 로드 완료 전 토글/저장 비활성화 및 저장 실패 시 상태 롤백
+
+### 테스트 인프라
+
+- `test/validate-payload.py`에 format 검증 활성화 (`rfc3339-validator` 의존성 가드 포함) — 이에 맞춰 픽스처의 `meta.request.date`를 실제 RFC 3339 형식으로 정정
+
 ## [2.0.0] - 2026-07-17
 
 ### 페이로드 스키마 v2 승격 (breaking)
@@ -11,8 +41,10 @@
 - 런타임 중립화 — `meta.php` 제거 → `meta.runtime{name,version}` + 최상위 `x-php{opcache}` 벤더 확장
 - `entries[].type` 개방 구조 — enum(dump/query/array) → 소문자 패턴 문자열 + 알려진 타입별 if/then 검증. 미지 타입 소비 규칙(label+dump+trace generic 렌더)과 타입 등록 절차를 SCHEMA.md에 명문화
 - `query.explain` 원시 구조 추가 — `format: table|text|json` 3형식으로 모든 DB 엔진 실행계획 수용. `explainHtml`은 deprecated 병행 유지
-- 최상위 optional `request` 섹션 — method/status/contentType + GET/POST/쿠키/세션/요청·응답 헤더. 민감 키 마스킹(`"***"`)·truncate 규칙 명세
+- 최상위 optional `request` 섹션 — method/status/contentType + GET/POST/쿠키/세션/요청·응답 헤더 + `route`/`handler`(라우트·핸들러 표시 문자열). 민감 키 마스킹(`"***"`)·truncate 규칙 명세
 - `log`/`exception` entry 타입 — PSR-3 8레벨 + 예외 체인(previous) 구조화, `summary.logs{count,byLevel}` 집계 추가
+- `query.bindings`/`query.connection` 추가 — prepared statement 파라미터 목록, 다중 DB 커넥션 구분 라벨
+- `entries[].truncated` 추가 — dump가 생산자 측에서 truncate됐는지 표시
 - 검증 도구 신설: `test/validate-payload.py`(jsonschema draft 2020-12) + positive/negative 픽스처 세트, 스키마 파일명 `debug-payload.v2.schema.json`으로 변경
 
 ### 패널 (v2 소비)
@@ -20,6 +52,8 @@
 - 헤더 요약을 `meta.runtime` 기반으로 교체 (php → "PHP 8.5.1" 표기 유지, 타 런타임은 name 그대로)
 - 미지 entry 타입 generic 렌더러 — 알려지지 않은 type은 label + dump + trace + 타입명 뱃지로 표시 (log/exception도 전용 렌더 전까지 이 경로)
 - EXPLAIN 렌더 3형식 — `query.explain`의 table(기존 테이블 스타일)/text(pre)/json(pre) 렌더, `explainHtml`과 공존 시 explain 우선
+- Queries 탭에 커넥션 뱃지·bindings 표시 추가 (`query.connection`/`query.bindings` 소비)
+- Dumps 탭에 TRUNCATED 뱃지 추가 (`entries[].truncated` 소비)
 - Files 탭 경로 하이라이트 복원 — `x-nova.fileHighlight`(경로 부분문자열 → 색상명) 소비, debug.js 와 동일한 10색 팔레트(라이트/다크). 링크 기본 스타일도 웹버전과 동일하게 조정(밑줄 제거, dim 색, hover 파랑)
 - Raw 탭 JSON 토글 아이콘 폭 축소 — 한 글자 폭(12px)만 차지하고 토글 없는 리프 라인도 같은 폭으로 들여써 동일 레벨 항목이 정렬되도록 수정
 - preview 하네스 `?fixture=` 픽스처 선택 지원 (test/fixtures/fixtures.js)

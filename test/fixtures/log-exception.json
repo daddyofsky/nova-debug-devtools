@@ -5,7 +5,7 @@
     "generator": "nova-debug/20260717",
     "request": {
       "uri": "/?debug=on",
-      "date": "2026-07-17 00:00:00"
+      "date": "2026-07-17T00:00:00+09:00"
     },
     "runtime": {
       "name": "php",
@@ -220,7 +220,7 @@
             "message": "Connection reset by peer",
             "code": 0,
             "file": null,
-            "line": 0,
+            "line": null,
             "trace": []
           }
         }

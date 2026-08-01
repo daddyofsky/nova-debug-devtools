@@ -5,7 +5,7 @@
     "generator": "nova-debug/20260717",
     "request": {
       "uri": "/?debug=on",
-      "date": "2026-07-17 00:00:00"
+      "date": "2026-07-17T00:00:00+09:00"
     },
     "runtime": {
       "name": "php",
@@ -43,8 +43,8 @@
         "sites": 0,
         "byType": []
       },
-      "avg": 2.5,
-      "max": 5,
+      "avg": 0.0025,
+      "max": 0.005,
       "maxIndex": 0
     },
     "files": {

@@ -41,11 +41,36 @@
   themeInputs.forEach((input) => {
     input.addEventListener("change", () => {
       if (input.checked) applyTheme(input.value);
+      markDirty();
     });
   });
 
   function storageArea() {
     return ext.storage.sync || ext.storage.local;
+  }
+
+  // isDirty: 로드 이후 사용자가 편집했는지 여부 — 편집 중에는 외부 변경을 조용히 덮어쓰지 않는다.
+  // suppressOwnChange: 저장이 만든 storage.onChanged 를 외부 변경으로 오인하지 않기 위한 가드.
+  // (load()는 걸지 않는다 — loadHostMap()은 HOST_MAP이 이미 있으면 write하지 않으므로 보통 onChanged를
+  // 유발하지 않고, 최초 1회 마이그레이션 write로 onChanged가 뜨더라도 그 시점엔 isDirty가 아직 false라
+  // 리스너가 조용한 재로드로 처리한다. load()에 걸면 매 로드마다 1초간 실제 외부 변경을 놓치게 된다.)
+  let isDirty = false;
+  let suppressOwnChange = false;
+  let saveBlocked = false;
+
+  function markDirty() {
+    isDirty = true;
+  }
+
+  function suppressNextChangeBriefly() {
+    suppressOwnChange = true;
+    setTimeout(() => { suppressOwnChange = false; }, 1000);
+  }
+
+  function blockSave(message) {
+    saveBlocked = true;
+    saveBtn.disabled = true;
+    saveStatusEl.textContent = message;
   }
 
   function addRow(host, config) {
@@ -143,6 +168,7 @@
     tokenGenBtn.textContent = "🎲";
     tokenGenBtn.addEventListener("click", () => {
       tokenInput.value = NovaDebugProtocol.generateToken();
+      markDirty();
     });
     const tokenCopyBtn = document.createElement("button");
     tokenCopyBtn.type = "button";
@@ -164,7 +190,10 @@
     removeBtn.type = "button";
     removeBtn.className = "btn-remove";
     removeBtn.textContent = "삭제";
-    removeBtn.addEventListener("click", () => tr.remove());
+    removeBtn.addEventListener("click", () => {
+      tr.remove();
+      markDirty();
+    });
     removeTd.appendChild(removeBtn);
 
     tr.appendChild(enabledTd);
@@ -179,7 +208,15 @@
     bodyEl.appendChild(tr);
   }
 
+  // 표 안 입력(호스트 행)은 동적으로 추가되므로 bodyEl 에 위임해 편집 여부를 감지한다.
+  bodyEl.addEventListener("input", markDirty);
+  bodyEl.addEventListener("change", markDirty);
+  showTimeChk.addEventListener("change", markDirty);
+  maxEntriesEl.addEventListener("input", markDirty);
+  debugTokenEl.addEventListener("input", markDirty);
+
   function load() {
+    while (bodyEl.firstChild) bodyEl.removeChild(bodyEl.firstChild);
     Promise.all([
       NovaDebugProtocol.loadHostMap(storageArea()),
       storageArea().get(["theme", "showTime", "maxEntries", STORAGE_KEYS.TOKEN]),
@@ -200,32 +237,63 @@
           hosts.forEach((host) => addRow(host, hostMap[host]));
         }
         renderPolicyCommands();
+        isDirty = false;
+        saveBlocked = false;
+        saveBtn.disabled = false;
+        saveStatusEl.textContent = "";
       })
       .catch((err) => {
         console.error("[NovaDebug] 옵션 로드 실패", err);
         addRow("", {});
         renderPolicyCommands();
+        blockSave("설정을 불러오지 못했습니다. 새로고침 후 다시 시도하세요.");
       });
   }
 
   function collectHostMap() {
-    const hostMap = {};
-    bodyEl.querySelectorAll("tr").forEach((tr) => {
+    const rows = Array.from(bodyEl.querySelectorAll("tr"));
+    const hostCounts = {};
+
+    // 1차: 형식 검증 + 정규화된 host 별 등장 횟수 집계 (중복 판정은 전체 행을 봐야 하므로 분리)
+    const parsedRows = rows.map((tr) => {
       const hostInput = tr.querySelector(".f-host");
       hostInput.classList.remove("invalid");
+      hostInput.removeAttribute("title");
       const raw = hostInput.value.trim();
-      if (!raw) return;
+      if (!raw) return { tr, host: null };
       const host = NovaDebugProtocol.normalizeHostname(raw);
       if (!host) {
         hostInput.classList.add("invalid");
+        hostInput.title = "올바른 호스트 형식이 아닙니다";
+        return { tr, host: null };
+      }
+      hostCounts[host] = (hostCounts[host] || 0) + 1;
+      return { tr, host };
+    });
+
+    const hostMap = {};
+    parsedRows.forEach(({ tr, host }) => {
+      if (!host) return;
+      const hostInput = tr.querySelector(".f-host");
+      if (hostCounts[host] > 1) {
+        hostInput.classList.add("invalid");
+        hostInput.title = "중복된 호스트입니다";
         return;
       }
       hostInput.value = host;
+
+      const protoCustomInput = tr.querySelector(".f-protocol-custom");
+      protoCustomInput.classList.remove("invalid");
       const protoValue = tr.querySelector(".f-protocol").value;
       const protocol =
         protoValue === CUSTOM_PROTOCOL_VALUE
-          ? tr.querySelector(".f-protocol-custom").value.trim()
+          ? protoCustomInput.value.trim()
           : protoValue;
+      if (protoValue === CUSTOM_PROTOCOL_VALUE && !protocol) {
+        protoCustomInput.classList.add("invalid");
+        return;
+      }
+
       hostMap[host] = {
         enabled: tr.querySelector(".f-enabled").checked,
         captureOnOpen: tr.querySelector(".f-capture-open").checked,
@@ -255,7 +323,11 @@
   }
 
   function hasInvalidInput() {
-    return !!bodyEl.querySelector(".f-host.invalid") || maxEntriesEl.classList.contains("invalid");
+    return (
+      !!bodyEl.querySelector(".f-host.invalid") ||
+      !!bodyEl.querySelector(".f-protocol-custom.invalid") ||
+      maxEntriesEl.classList.contains("invalid")
+    );
   }
 
   // Chrome/Windows 정책 명령은 체크된(enabled) 호스트만 대상으로 한다 — 스킴 정보가 저장되지
@@ -459,9 +531,13 @@
   }
   initShortcutSection();
 
-  addBtn.addEventListener("click", () => addRow("", {}));
+  addBtn.addEventListener("click", () => {
+    addRow("", {});
+    markDirty();
+  });
 
   saveBtn.addEventListener("click", () => {
+    if (saveBlocked) return;
     const hostMap = collectHostMap();
     const theme = collectTheme();
     const showTime = showTimeChk.checked;
@@ -471,6 +547,7 @@
       saveStatusEl.textContent = "잘못된 입력값이 있습니다 (빨간 테두리 입력을 확인하세요)";
       return;
     }
+    suppressNextChangeBriefly();
     storageArea()
       .set({
         [STORAGE_KEYS.HOST_MAP]: hostMap,
@@ -480,6 +557,7 @@
         [STORAGE_KEYS.TOKEN]: debugToken,
       })
       .then(() => {
+        isDirty = false;
         saveStatusEl.textContent = "저장되었습니다";
         renderPolicyCommands();
         setTimeout(() => { saveStatusEl.textContent = ""; }, 2000);
@@ -490,8 +568,28 @@
       });
   });
 
+  // 팝업/단축키 등 다른 곳에서 hostMap/토큰이 바뀌면: 편집 중이 아니면 조용히 재로드,
+  // 편집 중이면 저장 시 원복되지 않도록 경고 후 저장을 막는다. 자신의 저장/로드가 만든
+  // 이벤트는 suppressOwnChange 로 걸러 외부 변경으로 오인하지 않는다.
+  if (ext.storage.onChanged) {
+    ext.storage.onChanged.addListener((changes, area) => {
+      if (area !== "sync" && area !== "local") return;
+      if (!changes[STORAGE_KEYS.HOST_MAP] && !changes[STORAGE_KEYS.TOKEN]) return;
+      if (suppressOwnChange) {
+        suppressOwnChange = false;
+        return;
+      }
+      if (isDirty) {
+        blockSave("다른 곳에서 설정이 변경되었습니다 — 새로고침 후 다시 시도하세요.");
+      } else {
+        load();
+      }
+    });
+  }
+
   genTokenBtn.addEventListener("click", () => {
     debugTokenEl.value = NovaDebugProtocol.generateToken();
+    markDirty();
   });
 
   copyTokenBtn.addEventListener("click", () => {

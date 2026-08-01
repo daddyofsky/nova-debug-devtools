@@ -19,6 +19,16 @@ if [ -z "$VERSION" ]; then
   exit 1
 fi
 
+FIREFOX_VERSION="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$SCRIPT_DIR/manifest.firefox.json" | head -1)"
+if [ -z "$FIREFOX_VERSION" ]; then
+  echo "manifest.firefox.json 에서 version 을 읽지 못했습니다" >&2
+  exit 1
+fi
+if [ "$VERSION" != "$FIREFOX_VERSION" ]; then
+  echo "manifest.json($VERSION)과 manifest.firefox.json($FIREFOX_VERSION)의 version 이 다릅니다" >&2
+  exit 1
+fi
+
 CHROME_ZIP="$OUT_DIR/nova-debug-chrome-$VERSION.zip"
 FIREFOX_XPI="$OUT_DIR/nova-debug-firefox-$VERSION.xpi"
 
@@ -34,6 +44,7 @@ copy_source() {
     --exclude ".git" \
     --exclude ".idea" \
     --exclude ".mg" \
+    --exclude ".claude" \
     --exclude ".DS_Store" \
     --exclude "/test" \
     --exclude "/release" \

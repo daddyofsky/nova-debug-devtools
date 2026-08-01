@@ -39,8 +39,8 @@
 
   function updateTabCounts(d) {
     setTabCount("dumps", d.entries.length);
-    setTabCount("queries", d.summary.queries.count);
-    setTabCount("files", d.summary.files.count);
+    setTabCount("queries", d.summary.queries ? d.summary.queries.count : null);
+    setTabCount("files", d.summary.files ? d.summary.files.count : null);
   }
 
   function clearTabPanels() {

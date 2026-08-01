@@ -109,7 +109,7 @@
     const track = document.createElement('div');
     track.className = 'd-timeline';
 
-    const timelineEntries = debugData.entries.filter((item) => item.duration);
+    const timelineEntries = debugData.entries.filter((item) => typeof item.duration === 'number');
     const laneInput = timelineEntries.map((item) => ({
       entry: item,
       tl_left: total ? (item.time / total) * 100 : 0,

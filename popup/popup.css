@@ -119,6 +119,11 @@ h2 {
   background: #34c759;
 }
 
+.switch:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .switch[aria-checked="true"] .switch-knob {
   transform: translateX(18px);
 }

@@ -710,3 +710,130 @@ window.__novaDebugFixtures["minimal-optional"] = {
     "note": "임의 벤더 확장 키 — x-nova/x-php 외에도 루트 x-* 패턴 전체가 허용됨을 실증"
   }
 };
+window.__novaDebugFixtures["request-section"] = {
+  "schemaVersion": 2,
+  "meta": {
+    "id": "260717_000000_0000000000000006",
+    "generator": "nova-debug/20260717",
+    "request": {
+      "uri": "/?debug=on",
+      "date": "2026-07-17T00:00:00+09:00"
+    },
+    "runtime": {
+      "name": "php",
+      "version": "8.5.1"
+    },
+    "dirRoot": "/home/www/nova_builder",
+    "transport": {
+      "cookieName": "DO",
+      "cookieOn": false
+    }
+  },
+  "summary": {
+    "time": {
+      "total": 0.05,
+      "debug": 0.001
+    },
+    "memory": {
+      "usage": 1000000,
+      "peak": 1000000
+    },
+    "queries": {
+      "count": 0,
+      "time": 0,
+      "slow": {
+        "count": 0,
+        "time": 0
+      },
+      "dup": {
+        "total": 0,
+        "patterns": 0,
+        "percent": 0
+      },
+      "loop": {
+        "total": 0,
+        "sites": 0,
+        "byType": []
+      },
+      "avg": 0,
+      "max": 0,
+      "maxIndex": 0
+    },
+    "files": {
+      "count": 1
+    }
+  },
+  "thresholds": {
+    "slowQueryTime": 0.01,
+    "tooManyCount": 50
+  },
+  "files": [
+    {
+      "path": "/public/index.php"
+    }
+  ],
+  "frames": [
+    {
+      "file": 0,
+      "line": 1,
+      "func": "main",
+      "args": "",
+      "argsFull": ""
+    }
+  ],
+  "entries": [
+    {
+      "index": 0,
+      "type": "dump",
+      "time": 0,
+      "duration": 0,
+      "label": "IP",
+      "dump": "192.168.65.1",
+      "trace": [
+        0
+      ]
+    }
+  ],
+  "timeline": [
+    {
+      "name": "START",
+      "start": 0,
+      "duration": 0.05
+    }
+  ],
+  "request": {
+    "method": "POST",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "route": "/api/users/{id}",
+    "handler": "UserController::update",
+    "get": {
+      "page": "2",
+      "filter[status]": "active"
+    },
+    "post": {
+      "username": "daddy",
+      "password": "***"
+    },
+    "cookies": {
+      "PHPSESSID": "***",
+      "theme": "dark"
+    },
+    "session": {
+      "user_id": "42",
+      "csrf_token": "***"
+    },
+    "requestHeaders": {
+      "Host": "nova_builder.zzz",
+      "Authorization": "***",
+      "Accept": "application/json, text/plain, */*"
+    },
+    "responseHeaders": {
+      "Content-Type": "application/json; charset=utf-8",
+      "Set-Cookie": "***"
+    }
+  },
+  "x-php": {
+    "opcache": true
+  }
+};

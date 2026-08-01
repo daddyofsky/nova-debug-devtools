@@ -62,9 +62,12 @@
   }
 
   // entries 는 panel.js 가 참조를 공유하므로 length=0 방식이 아니라 splice로 앞에서(오래된 것부터) 제거한다.
+  // 잘려나가는 entry의 fetchUrl은 ownFetchUrls에서도 함께 제거해야 한다 — 안 그러면 그 URL이
+  // Set에 영구히 남아 계속 누적된다.
   function trimEntries() {
     if (entries.length > maxEntries) {
-      entries.splice(0, entries.length - maxEntries);
+      const removed = entries.splice(0, entries.length - maxEntries);
+      removed.forEach((entry) => ownFetchUrls.delete(entry.fetchUrl));
     }
   }
 
@@ -206,13 +209,21 @@
       return;
     }
 
-    port.postMessage({
-      type: MSG.REGISTER,
-      tabId: ext.devtools.inspectedWindow.tabId,
-    });
-    // SW 재시작 후 재연결이면 background의 캡쳐 승격 상태가 사라졌으므로 표시 중일 때 다시 승격한다.
-    if (panelVisible) {
-      port.postMessage({ type: MSG.PANEL_SHOWN });
+    try {
+      port.postMessage({
+        type: MSG.REGISTER,
+        tabId: ext.devtools.inspectedWindow.tabId,
+      });
+      // SW 재시작 후 재연결이면 background의 캡쳐 승격 상태가 사라졌으므로 표시 중일 때 다시 승격한다.
+      if (panelVisible) {
+        port.postMessage({ type: MSG.PANEL_SHOWN });
+      }
+    } catch (err) {
+      // port 가 connect() 직후 곧바로 무효화된 경우 — onDisconnect 를 기다리지 않고
+      // 기존 재연결 예약 경로로 넘긴다(안 그러면 재연결 없이 여기서 멈춘다).
+      console.error("[NovaDebug] REGISTER/PANEL_SHOWN 전송 실패", err);
+      scheduleReconnect();
+      return;
     }
 
     reconnectAttempts = 0;
@@ -276,9 +287,12 @@
       if (item.label && /ERROR|Exception/i.test(item.label)) hasError = true;
       if (item.label && /REDIRECT/i.test(item.label)) hasRedirect = true;
     });
+    // schemaVersion===2 라도 summary(혹은 summary.queries/slow)가 없는 페이로드가 있을 수 있어
+    // 방어적으로 접근한다(그렇지 않으면 entry.data/entry.error 가 혼재된 상태로 TypeError).
+    const queries = data.summary && data.summary.queries;
     return {
-      queryCount: data.summary.queries.count,
-      slowCount: data.summary.queries.slow.count,
+      queryCount: queries ? queries.count : 0,
+      slowCount: (queries && queries.slow) ? queries.slow.count : 0,
       hasError,
       hasRedirect,
     };

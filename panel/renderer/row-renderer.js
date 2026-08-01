@@ -175,7 +175,7 @@
       const q = item.query || {};
       remark = item.duration > slowQueryThreshold ? 'd-remark' : '';
       text = queryBadges(item) +
-        '<strong class="d-table">' + escHtml(q.table) + '</strong> ' +
+        '<strong class="d-table">' + escHtml(q.table || '(unknown)') + '</strong> ' +
         '[' + item.duration.toFixed(5) + ']' + SqlFormatter.pretty(SqlFormatter.truncateIn(item.dump));
     } else if (typeLabel) {
       if (item.array) {
@@ -318,9 +318,10 @@
   // 필터링(토글)하고, 검색어는 칩 필터와 AND 결합된다. 행 내 기존 뱃지는 그대로 유지.
   // PIN·SLOW 는 개수가 0이어도 항상 표시하되(d-filter-chip-empty 로 회색 비활성 표시) LOOP/DUP 는 원본처럼 개수 있을 때만 표시한다.
   function buildFilterToolbarHtml(debugData, pinCount, searchText) {
-    const loopN = debugData.summary.queries.loop.total || 0;
-    const dupN = debugData.summary.queries.dup.total || 0;
-    const slowN = debugData.summary.queries.slow.count || 0;
+    const queries = debugData.summary.queries;
+    const loopN = (queries && queries.loop) ? (queries.loop.total || 0) : 0;
+    const dupN = (queries && queries.dup) ? (queries.dup.total || 0) : 0;
+    const slowN = (queries && queries.slow) ? (queries.slow.count || 0) : 0;
     const pinEmpty = pinCount ? '' : ' d-filter-chip-empty';
     const slowEmpty = slowN ? '' : ' d-filter-chip-empty';
     let html = '<div class="d-dumps-toolbar">';

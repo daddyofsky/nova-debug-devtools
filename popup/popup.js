@@ -34,6 +34,11 @@
   let tabId = null;
   let toggleHintTimer = null;
 
+  // loadSiteState() 완료 전에는 아직 이 사이트의 실제 설정을 모르므로, 토글/저장으로 빈 값을
+  // 덮어쓰지 않도록 로드가 끝날 때까지 비활성화한다.
+  siteToggleBtn.disabled = true;
+  saveIdeBtn.disabled = true;
+
   function storageArea() {
     return ext.storage.sync || ext.storage.local;
   }
@@ -96,6 +101,8 @@
         fetchPathInput.value = config.fetchPath || "";
         tokenInput.value = config.token || "";
         updateFetchPathWarning();
+        siteToggleBtn.disabled = false;
+        saveIdeBtn.disabled = false;
       })
       .catch((err) => {
         console.error("[NovaDebug] 팝업 상태 로드 실패", err);
@@ -156,8 +163,8 @@
       });
   }
 
-  function showToggleHint() {
-    siteToggleHintEl.textContent = "페이지를 새로고침하면 적용됩니다";
+  function showToggleHint(text) {
+    siteToggleHintEl.textContent = text || "페이지를 새로고침하면 적용됩니다";
     siteToggleHintEl.classList.remove("hidden");
     clearTimeout(toggleHintTimer);
     toggleHintTimer = setTimeout(() => {
@@ -181,6 +188,8 @@
       })
       .catch((err) => {
         console.error("[NovaDebug] 사이트 on/off 저장 실패", err);
+        setSwitchState(!nextOn);
+        showToggleHint("저장 실패 — 다시 시도하세요");
       });
   });
 
@@ -192,10 +201,13 @@
       );
       if (!proceed) return;
     }
-    const protocol =
-      protocolSelect.value === CUSTOM_PROTOCOL_VALUE
-        ? protocolCustomInput.value.trim()
-        : protocolSelect.value;
+    const isCustomProtocol = protocolSelect.value === CUSTOM_PROTOCOL_VALUE;
+    const protocol = isCustomProtocol ? protocolCustomInput.value.trim() : protocolSelect.value;
+    if (isCustomProtocol && !protocol) {
+      ideSaveStatusEl.textContent = "직접입력 프로토콜 값을 입력하세요";
+      protocolCustomInput.focus();
+      return;
+    }
     NovaDebugProtocol.loadHostMap(storageArea())
       .then((hostMap) => {
         // 기존 값(예: 옵션 페이지에서 설정한 token 오버라이드)을 지우지 않도록 spread 로 병합한다.

@@ -68,8 +68,9 @@ if (typeof importScripts === "function") {
     // popup 이 직접 이 메시지를 보낸다.
     if (msg.type === MSG.SITE_TOGGLED) {
       // popup 토글은 DevTools 없이 켜는 명시적 의사 표시 — captureOnOpen 설정과 무관하게 바로 캡쳐
+      // persist:true — devtools 재연결 경로가 없는 탭이므로 SW 재시작 복원 대상으로 남긴다.
       const action = msg.enabled
-        ? HeaderInject.enable(msg.tabId, { capture: true })
+        ? HeaderInject.enable(msg.tabId, { capture: true, persist: true })
         : HeaderInject.disable(msg.tabId);
       action
         .then(() => sendResponse({ ok: true }))
@@ -250,8 +251,10 @@ if (typeof importScripts === "function") {
             if (nextOn && ext.permissions && typeof ext.permissions.request === "function") {
               ext.permissions.request({ origins: ["*://" + host + "/*"] }).catch(() => {});
             }
+            // persist:true — SITE_TOGGLED 와 동일하게 devtools 재연결 경로가 없는 탭이라
+            // SW 재시작 복원 대상으로 남긴다.
             return nextOn
-              ? HeaderInject.enable(tab.id, { capture: true })
+              ? HeaderInject.enable(tab.id, { capture: true, persist: true })
               : HeaderInject.disable(tab.id);
           });
       })
@@ -283,7 +286,9 @@ if (typeof importScripts === "function") {
     );
   });
 
-  HeaderInject.cleanupAll().catch((err) =>
-    console.error("[NovaDebug] header inject cleanupAll 실패", err)
-  );
+  // cleanupAll 이 지운 rule 중 popup/단축키 전용 탭(devtools 재연결 경로가 없음)은
+  // restorePersistedTabs 가 storage.session 목록 기준으로 되살린다.
+  HeaderInject.cleanupAll()
+    .then(() => HeaderInject.restorePersistedTabs())
+    .catch((err) => console.error("[NovaDebug] header inject cleanupAll 실패", err));
 })(typeof self !== "undefined" ? self : this);

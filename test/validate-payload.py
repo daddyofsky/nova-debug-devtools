@@ -3,6 +3,8 @@
 
 사용법:
     python3 test/validate-payload.py [--schema schema/debug-payload.v2.schema.json] <payload.json ...>
+
+의존성: pip install jsonschema rfc3339-validator (rfc3339-validator 없이는 date-time 등 format 검증이 동작하지 않는다)
 """
 import argparse
 import json
@@ -10,6 +12,16 @@ import sys
 from pathlib import Path
 
 from jsonschema import Draft202012Validator
+
+try:
+    import rfc3339_validator  # noqa: F401
+except ImportError:
+    print(
+        "rfc3339-validator 가 설치되어 있지 않아 date-time 등 format 검증이 동작하지 않습니다.\n"
+        "설치: pip install jsonschema rfc3339-validator",
+        file=sys.stderr,
+    )
+    sys.exit(1)
 
 
 DEFAULT_SCHEMA = Path(__file__).resolve().parent.parent / "schema" / "debug-payload.v2.schema.json"
@@ -31,7 +43,7 @@ def main():
         schema = json.load(f)
 
     Draft202012Validator.check_schema(schema)
-    validator = Draft202012Validator(schema)
+    validator = Draft202012Validator(schema, format_checker=Draft202012Validator.FORMAT_CHECKER)
 
     all_passed = True
     for payload_path in args.payloads:

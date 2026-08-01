@@ -5,7 +5,7 @@
     "generator": "nova-debug/20260712",
     "request": {
       "uri": "/?debug=on",
-      "date": "2026-07-12 01:50:46"
+      "date": "2026-07-12T01:50:46+09:00"
     },
     "ide": {
       "serverPath": "/home/www"

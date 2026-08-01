@@ -14,6 +14,62 @@
   const TABLE_NAME_RE = /\b(?:FROM|(?:(?:INNER|LEFT|RIGHT|OUTER)\s+)?JOIN|INTO|UPDATE)\s+(`?\w+`?)/gi;
   const INLINE_KW = ['FROM', 'ORDER BY', 'GROUP BY', 'LIMIT'];
 
+  const RAW_QUOTE_TOKENS = ["'", '"'];
+  const ESCAPED_QUOTE_TOKENS = ["'", '&quot;']; // escHtml()이 이미 적용된 텍스트용 — "는 &quot;로 치환된 상태
+
+  // '...'/"..."(또는 escHtml 적용 후의 &quot;...&quot;) 문자열 리터럴을 \x01L{n}\x01 플레이스홀더로
+  // 치환한다. 이스케이프(따옴표 2연속 '' 및 백슬래시 \') 를 인식해 리터럴 내부의 따옴표/괄호/키워드가
+  // 뒤이은 uppercase()/extractSubqueries()/절 분할 로직에 노출되지 않게 한다.
+  function maskLiterals(text, quoteTokens) {
+    const literals = [];
+    let result = '';
+    let i = 0;
+    const len = text.length;
+    while (i < len) {
+      let tok = null;
+      for (let k = 0; k < quoteTokens.length; k++) {
+        if (text.startsWith(quoteTokens[k], i)) { tok = quoteTokens[k]; break; }
+      }
+      if (!tok) {
+        result += text[i];
+        i++;
+        continue;
+      }
+      let j = i + tok.length;
+      while (j < len) {
+        if (text[j] === '\\') {
+          let escLen = 1;
+          for (let k = 0; k < quoteTokens.length; k++) {
+            if (text.startsWith(quoteTokens[k], j + 1)) { escLen = 1 + quoteTokens[k].length; break; }
+          }
+          j += escLen;
+          continue;
+        }
+        if (text.startsWith(tok, j)) {
+          if (text.startsWith(tok, j + tok.length)) { j += tok.length * 2; continue; } // 따옴표 2연속 escape
+          j += tok.length;
+          break;
+        }
+        j++;
+      }
+      const idx = literals.length;
+      literals.push(text.substring(i, j));
+      result += '\x01L' + idx + '\x01';
+      i = j;
+    }
+    return { masked: result, literals };
+  }
+
+  // transform 이 주어지면 복원되는 리터럴 원문에 적용한다(예: escHtml) — pretty()처럼 이미 escHtml이
+  // 끝난 텍스트에 뒤늦게 복원할 때 XSS 회귀 없이 이스케이프된 형태로 출력하기 위함.
+  function restoreLiterals(text, literals, transform) {
+    if (!literals.length) return text;
+    return text.replace(/\x01L(\d+)\x01/g, function (m, idx) {
+      const raw = literals[Number(idx)];
+      return transform ? transform(raw) : raw;
+    });
+  }
+
   function uppercase(sql) {
     return sql.replace(KEYWORDS_RE, function (m) { return m.toUpperCase(); });
   }
@@ -56,7 +112,8 @@
   function format(sql, indent, depth) {
     indent = indent || '\t';
     depth = depth || 0;
-    sql = uppercase(sql);
+    const { masked, literals } = maskLiterals(sql, RAW_QUOTE_TOKENS);
+    sql = uppercase(masked);
     const prefix = indent.repeat(depth);
     const content = prefix + indent;
 
@@ -129,6 +186,7 @@
     }
 
     sql = sql.replace(/\n\s*\n/g, '\n');
+    sql = restoreLiterals(sql, literals);
     return depth === 0 ? sql.replace(/^\s+/, '') : sql;
   }
 
@@ -139,13 +197,17 @@
     if (!sql) return '';
     const isDml = /^(INSERT|UPDATE|DELETE)\b/i.test(sql.trim());
 
-    sql = format(sql);
+    // 리터럴을 여기서 먼저 마스킹해두면 format() 내부에서 재발견되지 않아 플레이스홀더가
+    // escHtml/키워드 태깅을 그대로 통과하고, 마지막에 escHtml이 적용된 원문으로 복원된다.
+    const { masked, literals } = maskLiterals(sql, RAW_QUOTE_TOKENS);
+    sql = format(masked);
     sql = escHtml(sql);
     sql = highlightTableNames(sql, '<b class="d-tbl">$1</b>');
     sql = sql.replace(/\b(SELECT|FROM|WHERE|ORDER BY|GROUP BY|HAVING|LIMIT|INSERT INTO|UPDATE|DELETE|VALUES|SET)\b/g, '<b class="d-kw">$1</b>');
     sql = sql.replace(/\b(ON|AS|AND|OR|IN|NOT|EXISTS|BETWEEN|LIKE|IS NOT NULL|IS NULL|DISTINCT|OFFSET|CASE|WHEN|THEN|ELSE|END)\b/g, '<b class="d-kw-sub">$1</b>');
     sql = sql.replace(/\b((?:(?:INNER|LEFT|RIGHT|OUTER) )?JOIN)\b/g, '<b class="d-kw-join">$1</b>');
     sql = sql.replace(/\b(UNION(?: ALL)?)\b/g, '<b class="d-kw-union">$1</b>');
+    sql = restoreLiterals(sql, literals, escHtml);
 
     const cls = isDml ? 'd-sql d-dml' : 'd-sql';
     return '<code class="' + cls + '">' + sql + '</code>';
@@ -156,13 +218,16 @@
    */
   function simple(sql) {
     if (!sql) return '';
-    sql = uppercase(sql);
+    // 호출측 관례상 입력은 이미 escHtml 이 적용된 텍스트라 "는 &quot;로 치환돼 있다.
+    const { masked, literals } = maskLiterals(sql, ESCAPED_QUOTE_TOKENS);
+    sql = uppercase(masked);
     sql = highlightTableNames(sql, '<span style="color:#ff3700; font-weight:bold">$1</span>');
 
     sql = sql.replace(/\b(SELECT|FROM|WHERE|HAVING|ORDER\s+BY|GROUP\s+BY|LIMIT|INSERT\s+INTO|UPDATE|DELETE|VALUES|SET)(?=\s)/gi, '<span style="color:#0061c0; font-weight:bold">$1</span>');
     sql = sql.replace(/\b(ON|AS|AND|OR|IN|NOT|EXISTS|BETWEEN|LIKE|IS\s+NOT\s+NULL|IS\s+NULL|DISTINCT|OFFSET|CASE|WHEN|THEN|ELSE|END)\b/gi, '<span style="color:#0061c0; font-weight:normal">$1</span>');
     sql = sql.replace(/\b(((?:INNER|LEFT|RIGHT|OUTER)\s+)?JOIN)(?=\s)/gi, '<span style="color:#3a923a; font-weight:bold">$1</span>');
     sql = sql.replace(/\b(UNION(?:\s+ALL)?)(?=\s)/gi, '<span style="color:#9c27b0; font-weight:bold">$1</span>');
+    sql = restoreLiterals(sql, literals);
 
     if (/^(INSERT|UPDATE|DELETE)\b/i.test(sql.replace(/<[^>]*>/g, ''))) {
       return '<span class="d-dml">' + sql + '</span>';
