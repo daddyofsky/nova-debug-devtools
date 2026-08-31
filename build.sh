@@ -4,11 +4,12 @@
 #
 # manifest.json(Chrome)과 manifest.firefox.json(Firefox)을 각각 스테이징 디렉터리에
 # 복사해 압축한다. Firefox 빌드는 manifest.firefox.json 을 manifest.json 자리에 넣는다.
+# 기본 출력은 build/ — release/ 는 서명(인증)된 배포 파일 전용이므로 빌드가 덮어쓰지 않는다.
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-OUT_DIR="${1:-$SCRIPT_DIR/release}"
+OUT_DIR="${1:-$SCRIPT_DIR/build}"
 mkdir -p "$OUT_DIR"
 OUT_DIR="$(cd "$OUT_DIR" && pwd)"
 STAGE_DIR="$(mktemp -d)"
@@ -48,6 +49,7 @@ copy_source() {
     --exclude ".DS_Store" \
     --exclude "/test" \
     --exclude "/release" \
+    --exclude "/build" \
     --exclude "DESIGN.md" \
     --exclude "TODO.md" \
     --exclude "COMPARISON.md" \

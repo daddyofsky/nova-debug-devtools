@@ -13,6 +13,11 @@
   const STORAGE_KEYS = root.NovaDebugProtocol.STORAGE_KEYS;
   const tokenForHost = root.NovaDebugProtocol.tokenForHost;
   const loadHostMap = root.NovaDebugProtocol.loadHostMap;
+  const findHostEntry = root.NovaDebugProtocol.findHostEntry;
+  const isPatternHostKey = root.NovaDebugProtocol.isPatternHostKey;
+  const isRegexHostKey = root.NovaDebugProtocol.isRegexHostKey;
+  const hostKeyRegexSource = root.NovaDebugProtocol.hostKeyRegexSource;
+  const hostKeyToRegExp = root.NovaDebugProtocol.hostKeyToRegExp;
 
   // rule id는 탭 산술로 만들지 않는다 — 실 브라우저 tabId는 int32 상한을 넘는 값이 흔해
   // (base + tabId*블록크기 계산이 declarativeNetRequest 의 정수 id 범위를 벗어나 rule 등록이 통째로 거부됨).
@@ -117,23 +122,93 @@
     return result;
   }
 
+  // 선행 "*." 뿐인 와일드카드(예: "*.foo.com") 여부 — DNR requestDomains 는 등록 도메인의
+  // 서브도메인을 자동 매칭하므로 이 형태는 regexFilter 없이 "foo.com" 하나로 표현된다
+  // (apex 포함 — findHostEntry 의 매칭 규칙과 동일).
+  function leadingWildcardDomain(key) {
+    if (isRegexHostKey(key) || !key.startsWith("*.")) return null;
+    const rest = key.slice(2);
+    return rest.includes("*") ? null : rest;
+  }
+
   async function enableViaDnr(tabId) {
     const [hostConfig, existingRules] = await Promise.all([
       loadHostConfig(),
       ext.declarativeNetRequest.getSessionRules(),
     ]);
     const capture = tabCaptures(tabId);
+    const hostMap = hostConfig.hostMap;
 
     // 토큰 값이 같은 host끼리 그룹화해 그룹당 rule 1개만 생성 (대부분 전역 토큰 하나뿐이라
-    // 사실상 기존처럼 탭당 rule 1개로 유지된다).
-    const groups = new Map(); // token -> hostnames[]
-    Object.keys(hostConfig.hostMap).forEach((host) => {
-      const entry = hostConfig.hostMap[host];
+    // 사실상 기존처럼 탭당 rule 1개로 유지된다). 패턴 키는:
+    //  - "*.foo.com" → requestDomains "foo.com" (서브도메인 자동 매칭)
+    //  - 그 외(라벨 내 *, /정규식/) → 키당 regexFilter rule 1개 (RE2 미지원 패턴은 제외+로그)
+    // 정확 hostname 키가 패턴과 겹치면 findHostEntry 와 동일하게 정확 키가 우선해야 하므로
+    // 정확 rule 은 priority 2 로 토큰 충돌에서 이기게 하고, 비활성(주입 대상 아님) 정확 키는
+    // 패턴 rule 의 excludedRequestDomains 로 제외한다.
+    const exactGroups = new Map(); // token -> hostnames[]
+    const wildcardGroups = new Map(); // token -> base domains[]
+    const regexSpecs = []; // { key, token, regexFilter }
+    Object.keys(hostMap).forEach((key) => {
+      const entry = hostMap[key];
       if (!hostInjectable(entry, capture)) return;
-      const token = tokenForHost(host, hostConfig);
-      if (!groups.has(token)) groups.set(token, []);
-      groups.get(token).push(host);
+      const token = tokenForHost(key, hostConfig);
+      if (!isPatternHostKey(key)) {
+        if (!exactGroups.has(token)) exactGroups.set(token, []);
+        exactGroups.get(token).push(key);
+        return;
+      }
+      const baseDomain = leadingWildcardDomain(key);
+      if (baseDomain) {
+        if (!wildcardGroups.has(token)) wildcardGroups.set(token, []);
+        wildcardGroups.get(token).push(baseDomain);
+        return;
+      }
+      const source = hostKeyRegexSource(key);
+      if (!source) return;
+      regexSpecs.push({ key, token, regexFilter: "^https?://(?:" + source + ")(?::[0-9]+)?/" });
     });
+
+    // 패턴에 걸리지만 주입 대상이 아닌(비활성 등) 정확 키 — 패턴 rule 에서 제외해
+    // "정확 키 우선" semantics 를 유지한다.
+    const disabledExactKeys = Object.keys(hostMap).filter(
+      (key) => !isPatternHostKey(key) && !hostInjectable(hostMap[key], capture)
+    );
+    function excludedFor(matchesHost) {
+      return disabledExactKeys.filter(matchesHost);
+    }
+
+    const ruleSpecs = []; // { priority, condition(tabIds 제외), token }
+    for (const [token, hosts] of exactGroups) {
+      ruleSpecs.push({ priority: 2, token, condition: { requestDomains: hosts } });
+    }
+    for (const [token, domains] of wildcardGroups) {
+      const excluded = excludedFor((host) =>
+        domains.some((d) => host === d || host.endsWith("." + d))
+      );
+      const condition = { requestDomains: domains };
+      if (excluded.length) condition.excludedRequestDomains = excluded;
+      ruleSpecs.push({ priority: 1, token, condition });
+    }
+    for (const spec of regexSpecs) {
+      if (typeof ext.declarativeNetRequest.isRegexSupported === "function") {
+        try {
+          const res = await ext.declarativeNetRequest.isRegexSupported({ regex: spec.regexFilter });
+          if (!res || !res.isSupported) {
+            console.error("[NovaDebug] DNR 미지원 정규식 — 헤더 주입에서 제외", spec.key, res && res.reason);
+            continue;
+          }
+        } catch (err) {
+          console.error("[NovaDebug] 정규식 지원 확인 실패 — 헤더 주입에서 제외", spec.key, err);
+          continue;
+        }
+      }
+      const re = hostKeyToRegExp(spec.key);
+      const excluded = re ? excludedFor((host) => re.test(host)) : [];
+      const condition = { regexFilter: spec.regexFilter };
+      if (excluded.length) condition.excludedRequestDomains = excluded;
+      ruleSpecs.push({ priority: 1, token: spec.token, condition });
+    }
 
     const removeRuleIds = existingRules
       .filter((rule) => ruleBelongsToTab(rule, tabId))
@@ -148,7 +223,7 @@
 
     const addRules = [];
     let candidateId = DNR_RULE_ID_BASE;
-    for (const [token, hosts] of groups) {
+    for (const spec of ruleSpecs) {
       while (occupiedIds.has(candidateId)) candidateId++;
       if (candidateId > DNR_RULE_ID_MAX) {
         console.error(
@@ -159,22 +234,22 @@
       }
       addRules.push({
         id: candidateId,
-        priority: 1,
+        priority: spec.priority,
         condition: {
+          ...spec.condition,
           tabIds: [tabId],
           resourceTypes: RESOURCE_TYPES,
-          requestDomains: hosts,
         },
         action: {
           type: "modifyHeaders",
-          requestHeaders: [{ header: REQUEST_HEADER, operation: "set", value: token }],
+          requestHeaders: [{ header: REQUEST_HEADER, operation: "set", value: spec.token }],
         },
       });
       occupiedIds.add(candidateId);
       candidateId++;
     }
 
-    // opt-in 방식 — enabled 항목이 없으면(groups 도 비어짐) addRules=[] 로 어디에도 주입하지 않는다.
+    // opt-in 방식 — enabled 항목이 없으면(ruleSpecs 도 비어짐) addRules=[] 로 어디에도 주입하지 않는다.
     await ext.declarativeNetRequest.updateSessionRules({ removeRuleIds, addRules });
   }
 
@@ -203,8 +278,8 @@
     } catch {
       return {};
     }
-    const entry = hostConfigCache.hostMap[host];
-    if (!hostInjectable(entry, tabCaptures(details.tabId))) return {};
+    const found = findHostEntry(host, hostConfigCache.hostMap);
+    if (!hostInjectable(found && found.entry, tabCaptures(details.tabId))) return {};
     const token = tokenForHost(host, hostConfigCache);
     const headers = details.requestHeaders || [];
     const existing = headers.find((h) => h.name && h.name.toLowerCase() === REQUEST_HEADER_LC);

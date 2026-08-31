@@ -93,7 +93,9 @@
   function loadSiteState() {
     NovaDebugProtocol.loadHostMap(storageArea())
       .then((hostMap) => {
-        const config = hostMap[host] || {};
+        // 와일드카드/정규식 항목으로 켜진 사이트도 상태가 보이도록 패턴 매칭으로 조회
+        const found = NovaDebugProtocol.findHostEntry(host, hostMap);
+        const config = (found && found.entry) || {};
         setSwitchState(!!config.enabled);
         applyProtocolValue(config.protocol);
         localPathInput.value = config.localPath || "";
@@ -178,7 +180,11 @@
     setSwitchState(nextOn);
     NovaDebugProtocol.loadHostMap(storageArea())
       .then((hostMap) => {
-        hostMap[host] = { ...(hostMap[host] || {}), enabled: nextOn };
+        // 기록은 정확 hostname 항목(패턴보다 우선)에 남긴다 — 패턴으로 켜진 사이트를 끄는
+        // 경우에도 패턴 항목은 건드리지 않고 이 사이트만 오버라이드된다. 새로 만드는 정확
+        // 항목은 매칭된 패턴 항목의 설정(토큰/fetch 경로 등)을 물려받아 동작을 유지한다.
+        const matched = NovaDebugProtocol.findHostEntry(host, hostMap);
+        hostMap[host] = { ...((matched && matched.entry) || {}), enabled: nextOn };
         return storageArea().set({ [STORAGE_KEYS.HOST_MAP]: hostMap });
       })
       .then(() => {
@@ -210,9 +216,11 @@
     }
     NovaDebugProtocol.loadHostMap(storageArea())
       .then((hostMap) => {
-        // 기존 값(예: 옵션 페이지에서 설정한 token 오버라이드)을 지우지 않도록 spread 로 병합한다.
+        // 기존 값(예: 옵션 페이지에서 설정한 token 오버라이드, 패턴 항목에서 물려받는
+        // enabled/captureOnOpen)을 지우지 않도록 매칭 항목과 spread 로 병합한다.
+        const matched = NovaDebugProtocol.findHostEntry(host, hostMap);
         hostMap[host] = {
-          ...(hostMap[host] || {}),
+          ...((matched && matched.entry) || {}),
           protocol,
           localPath: localPathInput.value.trim(),
           project: projectInput.value.trim(),

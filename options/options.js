@@ -261,10 +261,10 @@
       hostInput.removeAttribute("title");
       const raw = hostInput.value.trim();
       if (!raw) return { tr, host: null };
-      const host = NovaDebugProtocol.normalizeHostname(raw);
+      const host = NovaDebugProtocol.normalizeHostKey(raw);
       if (!host) {
         hostInput.classList.add("invalid");
-        hostInput.title = "올바른 호스트 형식이 아닙니다";
+        hostInput.title = "올바른 호스트 형식이 아닙니다 (example.com, *.example.com, /정규식/)";
         return { tr, host: null };
       }
       hostCounts[host] = (hostCounts[host] || 0) + 1;
@@ -331,12 +331,23 @@
   }
 
   // Chrome/Windows 정책 명령은 체크된(enabled) 호스트만 대상으로 한다 — 스킴 정보가 저장되지
-  // 않으므로 host당 http/https 둘 다 등록한다.
+  // 않으므로 host당 http/https 둘 다 등록한다. 패턴 키 중 "*.foo.com" 은 base 도메인으로
+  // 치환하고(정책 URL 패턴은 서브도메인을 기본 포함), 그 외(라벨 내 *, 정규식)는 정책으로
+  // 표현할 수 없어 제외한다.
+  function policyHostForKey(key) {
+    if (!key) return null;
+    if (NovaDebugProtocol.isRegexHostKey(key)) return null;
+    if (key.startsWith("*.") && !key.slice(2).includes("*")) return key.slice(2);
+    if (key.includes("*")) return null;
+    return key;
+  }
+
   function enabledHostsFromRows() {
     const hosts = [];
     bodyEl.querySelectorAll("tr").forEach((tr) => {
       if (!tr.querySelector(".f-enabled").checked) return;
-      const host = NovaDebugProtocol.normalizeHostname(tr.querySelector(".f-host").value);
+      const key = NovaDebugProtocol.normalizeHostKey(tr.querySelector(".f-host").value);
+      const host = policyHostForKey(key);
       if (host && !hosts.includes(host)) hosts.push(host);
     });
     return hosts;

@@ -131,7 +131,8 @@
 
   function ideConfigForUrl(url) {
     const host = NovaDebugProtocol.extractHostname(url);
-    return (host && hostMap[host]) || {};
+    const found = NovaDebugProtocol.findHostEntry(host, hostMap);
+    return (found && found.entry) || {};
   }
 
   // ------------------------------------------------------------
@@ -172,7 +173,8 @@
   function refreshCaptureControl() {
     const url = shared && typeof shared.getPageUrl === "function" ? shared.getPageUrl() : "";
     captureHost = NovaDebugProtocol.extractHostname(url);
-    const entry = (captureHost && hostMap[captureHost]) || null;
+    const found = NovaDebugProtocol.findHostEntry(captureHost, hostMap);
+    const entry = (found && found.entry) || null;
     const usable = !!(entry && entry.enabled);
     captureOpenChk.disabled = !usable;
     captureOpenChk.checked = !!(entry && entry.captureOnOpen);
@@ -190,7 +192,10 @@
     // 저장 직전에 최신 hostMap 을 다시 읽어 다른 필드(옵션 페이지 편집분)를 덮어쓰지 않는다.
     NovaDebugProtocol.loadHostMap(storageArea())
       .then((map) => {
-        const entry = map[host];
+        // 패턴(와일드카드/정규식) 항목으로 켜진 사이트면 그 패턴 항목에 기록한다 —
+        // captureOnOpen 은 항목 단위 설정이라 같은 패턴에 걸리는 사이트 전체에 적용된다.
+        const found = NovaDebugProtocol.findHostEntry(host, map);
+        const entry = found && found.entry;
         if (!entry || !entry.enabled) {
           refreshCaptureControl();
           return;

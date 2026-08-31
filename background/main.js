@@ -16,6 +16,7 @@ if (typeof importScripts === "function") {
   const REQUEST_HEADER = root.NovaDebugProtocol.REQUEST_HEADER;
   const STORAGE_KEYS = root.NovaDebugProtocol.STORAGE_KEYS;
   const loadHostMap = root.NovaDebugProtocol.loadHostMap;
+  const findHostEntry = root.NovaDebugProtocol.findHostEntry;
   const HeaderInject = root.NovaHeaderInject;
 
   function storageArea() {
@@ -241,8 +242,12 @@ if (typeof importScripts === "function") {
 
     loadHostMap(storageArea())
       .then((hostMap) => {
-        const nextOn = !(hostMap[host] && hostMap[host].enabled);
-        hostMap[host] = { ...(hostMap[host] || {}), enabled: nextOn };
+        // 와일드카드/정규식 항목으로 켜진 호스트도 토글 가능해야 하므로 현재 상태는 패턴
+        // 매칭으로 판단하고, 기록은 정확 hostname 항목(패턴보다 우선)에 남긴다. 새로 만드는
+        // 정확 항목은 매칭된 패턴 항목의 설정(토큰/fetch 경로 등)을 물려받아 동작을 유지한다.
+        const matched = findHostEntry(host, hostMap);
+        const nextOn = !(matched && matched.entry && matched.entry.enabled);
+        hostMap[host] = { ...((matched && matched.entry) || {}), enabled: nextOn };
         return storageArea()
           .set({ [STORAGE_KEYS.HOST_MAP]: hostMap })
           .then(() => {

@@ -3,6 +3,7 @@
 .claude/
 .DS_Store
 release/
+build/
 COMPARISON.md
 TODO.md
 PLAN-*.md

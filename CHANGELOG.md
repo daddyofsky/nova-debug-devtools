@@ -2,6 +2,16 @@
 
 이 문서는 Nova Debug DevTools 확장의 릴리즈 이력을 기록한다.
 
+## [2.1.1] - 2026-08-31
+
+### 개선
+
+- 호스트(도메인) 지정에 와일드카드·정규식 패턴 지원 — `*.example.com`(자신 + 모든 서브도메인, match pattern 관례), 라벨 내 `*` glob(`dev-*.example.com`, `.` 제외 임의 문자), `/정규식/`(호스트명 전체 매칭). 정확한 hostname 항목이 패턴 항목보다 항상 우선하며, 아이콘 상태·헤더 주입(Chrome DNR/Firefox webRequest)·popup·panel(IDE 매핑, 오픈 캡쳐)·단축키 토글 전부에 적용. Chrome DNR은 `*.foo.com`을 `requestDomains`(서브도메인 자동 매칭)로, 그 외 패턴은 `regexFilter`로 등록하고 RE2 미지원 정규식은 제외 후 콘솔에 로그. popup·단축키로 패턴 매칭 사이트를 토글하면 패턴 항목은 건드리지 않고 해당 호스트의 정확 항목(패턴 설정 상속)으로 오버라이드
+
+### 수정
+
+- Firefox에서 `about:newtab` 등 새 탭이 활성화(진한) 아이콘으로 표시되던 문제 수정 — v2.1.0 아이콘 상태 기능 추가 시 `manifest.firefox.json`의 `action.default_icon`이 흐린(off) 아이콘으로 교체되지 않아, 탭별 `setIcon`이 닿지 않는 새 탭(미리 로드되어 `tabs.onUpdated`가 발화하지 않음)이 기본값인 진한 아이콘으로 남던 문제
+
 ## [2.1.0] - 2026-08-01
 
 코드 리뷰로 드러난 v2 전환 이후의 안정성 문제를 수정했다.

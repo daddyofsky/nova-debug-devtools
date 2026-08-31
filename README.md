@@ -25,7 +25,7 @@ DevTools 패널 열림
 - **Files / Timeline / Raw 탭** — 탭별 검색, JSON 트리 뷰, 전체 복사
 - **IDE 딥링크** — trace 항목 클릭으로 PhpStorm/IDEA/VS Code 등에서 해당 라인 열기
 - **테마** — DevTools 테마 연동(auto) / light / dark
-- **캡쳐 제어** — 사이트별 on/off(툴바 아이콘 상태 표시), 패널 표시 중에만 캡쳐(기본) 또는 호스트별 "DevTools 열림 동안 항상 캡쳐", on/off 단축키
+- **캡쳐 제어** — 사이트별 on/off(툴바 아이콘 상태 표시), 패널 표시 중에만 캡쳐(기본) 또는 호스트별 "DevTools 열림 동안 항상 캡쳐", on/off 단축키. 호스트는 정확한 도메인 외에 와일드카드(`*.example.com`)·정규식(`/패턴/`)으로도 지정 가능
 
 ## 설치
 

@@ -9,6 +9,7 @@
   const ext = root.NovaDebugProtocol.ext;
   const STORAGE_KEYS = root.NovaDebugProtocol.STORAGE_KEYS;
   const extractHostname = root.NovaDebugProtocol.extractHostname;
+  const findHostEntry = root.NovaDebugProtocol.findHostEntry;
   const loadHostMap = root.NovaDebugProtocol.loadHostMap;
 
   const ICON_ON = {
@@ -30,8 +31,8 @@
 
   function setTabIcon(tabId, url, hostMap) {
     const host = extractHostname(url);
-    const entry = host ? hostMap[host] : null;
-    const enabled = !!(entry && entry.enabled);
+    const found = findHostEntry(host, hostMap);
+    const enabled = !!(found && found.entry && found.entry.enabled);
     // 탭이 이미 닫혔거나 접근 불가한 탭이면 실패 — 무시
     return ext.action.setIcon({ tabId, path: enabled ? ICON_ON : ICON_OFF }).catch(() => {});
   }
