@@ -18,7 +18,8 @@
   const RECONNECT_MAX_DELAY_MS = 5000;
   const HEARTBEAT_INTERVAL_MS = 15000; // background(SW/event page) idle 타임아웃(통상 30s)보다 짧게 유지
   const HEARTBEAT_TIMEOUT_MS = 10000;
-  const NAV_COMMITTED_FRESH_MS = 1500; // NAV_COMMITTED 매칭 entry의 최대 허용 나이(reload 오매칭 방지)
+  const NAV_DOC_FRESH_MS = 1500; // 내비게이션 매칭 문서 entry의 최대 허용 나이(reload 오매칭 방지)
+  const NAV_DEDUPE_MS = 5000; // NAV_COMMITTED 로 이미 처리한 내비게이션의 뒤늦은 onNavigated 무시 구간
 
   const entries = [];
   const listeners = new Set();
@@ -40,6 +41,16 @@
   // inspected 페이지의 현재 URL — 패널의 사이트별 캡쳐 설정(captureOnOpen 체크박스)이
   // 어느 호스트를 가리키는지 판별하는 데 쓴다. 초기값은 eval, 이후 내비게이션 시 갱신.
   let pageUrl = "";
+  // 현재 페이지의 문서 요청 entry — 다음 내비게이션에서 "이번 페이지의 문서" 를 찾을 때
+  // 후보에서 제외한다(같은 URL 재로드 시 이전 로드분이 경계로 뽑히는 것을 막는다).
+  let currentDocEntry = null;
+  // 내비게이션 직후 문서 entry 도착을 기다리는 URL — 도착하면 currentDocEntry 로 표시한다.
+  let pendingDocUrl = null;
+  // NAV_COMMITTED 로 정리를 끝낸 내비게이션 — 같은 내비게이션의 뒤늦은 onNavigated 를 가려낸다.
+  let lastCommitNav = { url: "", at: 0 };
+  // 직전에 확인한 inspected 페이지의 performance.timeOrigin — 문서가 교체될 때만 값이 바뀌므로
+  // same-document 이동(history.pushState / hash 변경) 판별 기준으로 쓴다.
+  let lastTimeOrigin = null;
 
   function storageArea() {
     return ext.storage.sync || ext.storage.local;
@@ -67,7 +78,10 @@
   function trimEntries() {
     if (entries.length > maxEntries) {
       const removed = entries.splice(0, entries.length - maxEntries);
-      removed.forEach((entry) => ownFetchUrls.delete(entry.fetchUrl));
+      removed.forEach((entry) => {
+        ownFetchUrls.delete(entry.fetchUrl);
+        if (entry === currentDocEntry) currentDocEntry = null;
+      });
     }
   }
 
@@ -369,6 +383,13 @@
       retrying: false,
       fetchUrl,
     };
+    // 직전 내비게이션이 기다리던 문서 요청이면 표시해 둔다 — 다음 내비게이션의 경계 탐색에서
+    // 이 entry 를 후보에서 빼야 같은 URL 재로드 시 이전 로드분이 경계로 뽑히지 않는다.
+    if (pendingDocUrl !== null && stripFragment(entry.url) === pendingDocUrl) {
+      currentDocEntry = entry;
+      pendingDocUrl = null;
+    }
+
     entries.push(entry);
     trimEntries();
     notify();
@@ -397,74 +418,118 @@
     }
   }
 
-  ext.devtools.network.onNavigated.addListener((url) => {
-    pageUrl = url;
-    if (preserveLog) {
-      notify(); // 목록은 유지하되 패널의 현재 호스트 표시(캡쳐 설정)는 갱신
-      return;
-    }
-
-    // Firefox 는 onNavigated 가 문서 요청 완료(entry 추가)보다 한참 뒤(관찰상 ~700ms 지연)
-    // 발화되어, 전체 clear 시 방금 추가된 문서 entry는 물론 그 뒤에 이미 붙은 새 페이지의
-    // ajax entry들까지 지워진다(Chromium 은 커밋 시점에 먼저 발화되어 clear 시점엔 아직
-    // entry 가 없으므로 전체 clear가 안전). entries 는 시간순 append 이므로, navigate 된
-    // URL과 일치하는 가장 최근 occurrence의 인덱스를 찾아 그 인덱스부터 끝까지(문서 entry +
-    // 그 뒤에 붙은 새 페이지 소속 entry 전부)를 보존하고, 그 앞(이전 페이지 소속, reload라면
-    // 이전 로드분 포함)만 제거한다.
-    if (isFirefox) {
-      const navigatedUrl = stripFragment(url);
-      let matchedIndex = -1;
-      for (let i = entries.length - 1; i >= 0; i--) {
-        if (stripFragment(entries[i].url) === navigatedUrl) {
-          matchedIndex = i;
-          break;
-        }
-      }
-      entries.splice(0, matchedIndex === -1 ? entries.length : matchedIndex);
-      ownFetchUrls.clear();
-      entries.forEach((entry) => ownFetchUrls.add(entry.fetchUrl));
-      notify();
-      return;
-    }
-
-    entries.length = 0;
-    ownFetchUrls.clear();
-    notify();
-  });
-
-  // background 가 webNavigation.onCommitted 를 릴레이한 것(Firefox 전용, 위 onNavigated 보다
-  // 훨씬 이르게 도착) — 커밋 시점에 이전 페이지 entry를 미리 정리해 Chromium과 비슷한 체감을
-  // 준다. freshness(NAV_COMMITTED_FRESH_MS) 조건 없이 URL만 매칭하면 reload(같은 URL 재로드)
-  // 때 이전 로드의 entry가 매칭되어 잘못 보존되므로, 방금(1.5초 이내) 추가된 entry만 매칭
-  // 대상으로 삼는다. 이 레이스(커밋 메시지가 문서 requestFinished 보다 늦게 도착하는 극소형
-  // 응답 등)에서 방금 추가된 문서 entry를 지우지 않도록 보호하는 목적도 겸한다.
-  // 빠른 연속 reload(<1.5s)로 이전 entry가 fresh 조건에 걸려 잘못 남더라도, 늦게 도착하는
-  // 기존 onNavigated 핸들러(위, keep-from-latest-match)가 최신 로드분만 남기며 자가 교정한다.
-  function handleNavCommitted(url) {
-    pageUrl = url;
-    if (preserveLog) {
-      notify();
-      return;
-    }
+  // 내비게이션 정리 — 이전 페이지 소속 entry만 제거하고 새 페이지 소속은 남긴다.
+  //
+  // 새 페이지의 문서 entry는 이 정리보다 먼저 도착해 있을 수 있다(Firefox 는 onNavigated 가
+  // 문서 요청 완료보다 관찰상 ~700ms 늦게 발화하고, 커밋 릴레이 경로도 극소형 응답에서는
+  // 문서 entry 뒤에 도착할 수 있다). entries 는 시간순 append 이므로 그 문서 entry의 인덱스를
+  // 경계로 삼아 앞쪽만 제거하면 문서 entry와 그 뒤에 이미 붙은 새 페이지 ajax entry가 보존된다.
+  //
+  // 경계 후보는 (a) navigate 된 URL과 같고 (b) 방금(NAV_DOC_FRESH_MS 이내) 추가됐으며
+  // (c) 현재 페이지의 문서 entry가 아닌 것 중 가장 이른 것이다.
+  // - (b) 는 같은 URL 재로드에서 이전 로드분이 경계로 뽑히는 것을 막는다.
+  // - (c) 는 그 중에서도 fresh 조건에 걸리는 직전 로드의 문서 entry를 후보에서 뺀다.
+  // - "가장 이른 것" 이어야 페이지와 같은 URL로 보내는 ajax(POST 폼 전송 등)가 경계가 되어
+  //   그 앞의 문서 entry가 잘려나가는 것을 막을 수 있다.
+  function pruneForNavigation(url) {
     const navigatedUrl = stripFragment(url);
     const now = Date.now();
-    let matchedIndex = -1;
-    for (let i = entries.length - 1; i >= 0; i--) {
+    let docIndex = -1;
+    for (let i = 0; i < entries.length; i++) {
       const entry = entries[i];
-      if (stripFragment(entry.url) === navigatedUrl && now - entry.time.getTime() <= NAV_COMMITTED_FRESH_MS) {
-        matchedIndex = i;
-        break;
-      }
+      if (entry === currentDocEntry) continue;
+      if (stripFragment(entry.url) !== navigatedUrl) continue;
+      if (now - entry.time.getTime() > NAV_DOC_FRESH_MS) continue;
+      docIndex = i;
+      break;
     }
-    entries.splice(0, matchedIndex === -1 ? entries.length : matchedIndex);
+
+    if (docIndex === -1) {
+      entries.length = 0;
+      currentDocEntry = null;
+      pendingDocUrl = navigatedUrl; // 뒤이어 도착할 문서 entry를 표시하기 위해
+    } else {
+      entries.splice(0, docIndex);
+      currentDocEntry = entries[0];
+      pendingDocUrl = null;
+    }
+
     ownFetchUrls.clear();
     entries.forEach((entry) => ownFetchUrls.add(entry.fetchUrl));
     notify();
   }
 
+  // inspected 페이지에서 식을 평가한다. 반환 형태가 다르다: Chrome 은 callback(result,
+  // exceptionInfo), Firefox 는 promise([result, errorInfo]).
+  function evalInPage(expr) {
+    if (isFirefox) {
+      return ext.devtools.inspectedWindow
+        .eval(expr)
+        .then((res) => (Array.isArray(res) ? res[0] : res));
+    }
+    return new Promise((resolve) => {
+      ext.devtools.inspectedWindow.eval(expr, (result) => resolve(result));
+    });
+  }
+
+  // 문서가 실제로 교체됐는지 — performance.timeOrigin 은 문서마다 새로 부여되므로 값이 그대로면
+  // history.pushState/hash 이동 같은 same-document 내비게이션이다. 이때 목록을 비우면 현재
+  // 보고 있는 페이지의 로그를 잃으므로 정리하지 않는다. 판별에 실패하면(값 없음/평가 불가)
+  // 문서 교체로 간주해 기존 동작(정리)을 유지한다.
+  function checkDocumentReplaced() {
+    return evalInPage("performance.timeOrigin")
+      .then((origin) => {
+        if (typeof origin !== "number") {
+          lastTimeOrigin = null;
+          return true;
+        }
+        const replaced = origin !== lastTimeOrigin;
+        lastTimeOrigin = origin;
+        return replaced;
+      })
+      .catch(() => {
+        lastTimeOrigin = null;
+        return true;
+      });
+  }
+
+  ext.devtools.network.onNavigated.addListener((url) => {
+    pageUrl = url;
+    notify(); // 목록과 별개로 패널의 현재 호스트 표시(캡쳐 설정)는 항상 갱신
+
+    // 같은 내비게이션을 NAV_COMMITTED 가 이미 커밋 시점에 정리했다면 여기서 다시 정리하지
+    // 않는다. 이 시점에는 새 페이지의 문서 entry와 ajax entry가 이미 목록에 있어, 다시
+    // 경계를 찾으면 페이지와 같은 URL로 보낸 ajax 가 경계가 되어 문서 entry가 잘려나간다.
+    const deduped =
+      stripFragment(url) === lastCommitNav.url &&
+      Date.now() - lastCommitNav.at <= NAV_DEDUPE_MS;
+
+    // dedupe 되거나 preserveLog 중이라도 다음 판별 기준이 되는 timeOrigin 은 갱신해야 한다.
+    checkDocumentReplaced().then((replaced) => {
+      if (deduped || preserveLog || !replaced) return;
+      pruneForNavigation(url);
+    });
+  });
+
+  // background 가 webNavigation.onCommitted 를 릴레이한 것(Firefox 전용, 위 onNavigated 보다
+  // 훨씬 이르게 도착) — 커밋 시점에 이전 페이지 entry를 미리 정리해 Chromium과 비슷한 체감을
+  // 준다. webNavigation.onCommitted 는 same-document 이동에는 발화하지 않으므로 별도 판별 없이
+  // 곧바로 정리한다.
+  function handleNavCommitted(url) {
+    pageUrl = url;
+    lastCommitNav = { url: stripFragment(url), at: Date.now() };
+    if (preserveLog) {
+      notify();
+      return;
+    }
+    pruneForNavigation(url);
+  }
+
   function clear() {
     entries.length = 0;
     ownFetchUrls.clear();
+    currentDocEntry = null;
+    pendingDocUrl = null;
     notify();
   }
 
@@ -511,6 +576,9 @@
   connectPort();
   loadMaxEntries();
   loadNovaConfig();
+  // 현재 문서의 timeOrigin 을 미리 기록해 둔다 — 첫 내비게이션이 same-document 이동(pushState)
+  // 이어도 기준값이 없어 문서 교체로 오판하지 않도록.
+  checkDocumentReplaced();
 
   // 초기 URL — 내비게이션 이벤트가 오기 전(패널을 바로 열었을 때)에도 현재 호스트를 알 수 있도록.
   // eval 반환 형태가 다르다: Chrome 은 callback(result), Firefox 는 promise([result, errorInfo]).
